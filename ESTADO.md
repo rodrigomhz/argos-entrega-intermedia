@@ -1,6 +1,6 @@
 # ESTADO — dónde está Argos ahora mismo
 
-> Documento de traspaso. Actualizado el **26 de septiembre de 2026**.
+> Documento de traspaso. Actualizado el **26 de septiembre de 2026** (segunda revisión del día).
 > Léelo entero antes de proponer nada. Si algo de aquí contradice a otro documento, gana este.
 
 ---
@@ -36,7 +36,9 @@ La bóveda está dentro de Nextcloud, así que **sincroniza sola** entre la torr
 Consecuencias que hay que respetar:
 
 - Nextcloud sincroniza también `.git`, y usa ficheros virtuales: la carpeta va **anclada en cada
-  máquina**. Hecho en la torre el 24-09-2026; **en el portátil falta**.
+  máquina**. Hecho: torre el 24-09-2026, portátil el 26-09-2026. Comprobado que no queda ningún
+  fichero con atributo `O` (solo en la nube). Si hiciera falta repetirlo:
+  `attrib -U +P "C:\Users\rodri\Nextcloud\Argos\*" /S /D` (el `\*` es obligatorio).
 - Cambiar de máquina solo con Nextcloud al día, y hacer push al cerrar cada hito.
 - Un `.gitignore` no frena a Nextcloud. El entorno de Python, las muestras y los ejecutables
   generados tienen que vivir **fuera de esta carpeta**, no solo fuera de git.
@@ -50,7 +52,7 @@ Consecuencias que hay que respetar:
 - Bóveda creada, con `00 - Que es Argos.md` aprobado por Calvo el 21-09-2026.
 - Repo git creado el 24-09-2026: `git init -b main`, commit `5e2bc94 Paso 1: qué es Argos`,
   vinculado a GitHub privado. Verificado que el remoto lo tiene y que sin sesión da 404.
-- **Memoria de la asignatura: 5 de 8 apartados escritos** (ver punto 5).
+- **Memoria de la asignatura: 6 de 8 apartados escritos** (ver punto 5).
 
 ---
 
@@ -83,7 +85,7 @@ El profesor pide un documento con 8 apartados. Estado:
 
 | # | Apartado | Estado |
 |---|---|---|
-| 1 | Investigaciones y desarrollos similares, incluidas las basadas en IA | **PENDIENTE** |
+| 1 | Investigaciones y desarrollos similares, incluidas las basadas en IA | Escrito |
 | 2 | Tipo de planteamiento elegido, justificado | Escrito |
 | 3 | Estrategia de uso de IA en el desarrollo | Escrito |
 | 4 | Componente de IA integrado | Escrito (como ampliación aplazada) |
@@ -92,11 +94,13 @@ El profesor pide un documento con 8 apartados. Estado:
 | 7 | Tecnologías y lenguajes | Escrito |
 | 8 | Hardware necesario y coste | **PENDIENTE** (falta medir el equipo) |
 
-Para el apartado 1 hay material aprovechable en el material viejo de `D:`, en
-`notas\estado-del-arte.md`. Candidatas: VirusTotal, any.run, Hatching Triage, CAPEv2, DRAKVUF y
-`darama22/ZeroTrustLauncher`. Como herramienta basada en IA hay que citar **VirusTotal Code
-Insight** (abril de 2023, sobre Sec-PaLM): capa de LLM que resume en lenguaje natural qué hace un
-fichero, sin tocar el motor de detección.
+El apartado 1 se escribió el 26-09-2026 a partir del material viejo de `D:`. Cubre VirusTotal,
+any.run, Hatching Triage, CAPEv2, DRAKVUF y `darama22/ZeroTrustLauncher`, y como herramienta
+basada en IA cita **VirusTotal Code Insight** (abril de 2023, sobre Sec-PaLM), cuya clave es que
+el modelo **no detecta, solo explica** — el mismo reparto que defiende el apartado 2.
+
+**Aviso dentro del documento (línea ~96): falta verificar qué funciones de IA tiene any.run hoy**
+antes de entregar. Lo de VirusTotal sí está verificado; lo de any.run no.
 
 ---
 
@@ -119,6 +123,10 @@ fichero, sin tocar el motor de detección.
 8. **Tiene que acabar siendo un ejecutable empaquetado** que funcione en otro equipo sin instalar
    nada, para enseñarlo en la defensa. Condiciona cómo se escribe desde el principio: rutas
    relativas, nada clavado a su usuario, dependencias empaquetables.
+9. **Todo se queda en `Nextcloud\Argos`: notas y repo git juntos.** El 26-09-2026 se le propuso
+   separar el código de las notas y dijo que no: *"lo ponemos en github y ya"*. La carpeta está
+   anclada en las dos máquinas y funciona. **No volver a sacar el tema**: le roba tiempo de lo que
+   puntúa.
 
 ---
 
@@ -183,8 +191,12 @@ configuración y nunca fija en el código.
 
 Dos frentes abiertos. Calvo elige por cuál seguir:
 
-1. **Terminar la memoria de la asignatura** — quedan los apartados 1, 5 y 8. El 1 es el más largo;
-   el 8 se cierra rápido midiendo el equipo.
+1. **Terminar la memoria de la asignatura.** Quedan dos apartados:
+   - **8 — Hardware.** Se cierra rápido: medir el equipo y escribirlo. Es lo inmediato.
+   - **5 — Diagrama de flujo.** Las cuatro capas en cascada, sin puntos de IA. Hay que decidir si
+     se dibuja en Mermaid dentro del documento o como imagen aparte.
 2. **Empezar el hito 2** — preparar el entorno de desarrollo.
 
-Pendiente menor: anclar la carpeta de Nextcloud en el portátil, y confirmar si Argos es el TFG.
+Antes de entregar, resolver el aviso del apartado 1: verificar las funciones de IA de any.run.
+
+Pendiente menor: confirmar si Argos es el TFG o solo el proyecto de la asignatura.
