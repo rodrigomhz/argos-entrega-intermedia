@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "argos"
+dynamic = ["version"]
+description = "Analizador local de ficheros sospechosos"
+requires-python = ">=3.12"
+
+[project.scripts]
+argos = "argos.__main__:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "argos.__version__" }

@@ -1,2 +1,4 @@
-# Obsidian guarda aquí qué pestañas tienes abiertas: cambia a cada clic y no es parte del proyecto
-.obsidian/workspace*.json
+# Python guarda aquí el código ya traducido para arrancar más rápido: se regenera solo
+__pycache__/
+# pip lo crea al instalar Argos en el entorno virtual: datos de la instalación, no código
+*.egg-info/
