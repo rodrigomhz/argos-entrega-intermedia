@@ -7,7 +7,7 @@ import pyzipper
 from magika import Magika
 
 from argos import __version__, listas
-from argos.estatico import ENTROPIA_ALTA, analizar_pe, defender, defender_datos, verificar_firma
+from argos.estatico import ENTROPIA_ALTA, analizar_pe, defender, defender_datos, nombre_firmante, suplantacion, verificar_firma
 from argos.identificacion import identificar, identificar_datos, miembros_zip
 
 
@@ -45,6 +45,15 @@ def mostrar_defender(antivirus):
     print(f"Defender:      {antivirus['estado']}{detalle}")
 
 
+def mostrar_suplantacion(avisos, firma_leida):
+    if not avisos:
+        falta = "sin indicios" if firma_leida else "sin comprobar (no se leyó la firma: el fichero está en memoria)"
+        print(f"Suplantación:  {falta}")
+        return
+    for i, aviso in enumerate(avisos):
+        print(("Suplantación:  " if i == 0 else "               ") + aviso)
+
+
 def mostrar_estatico(datos, antivirus, firma=None):
     if datos is None:
         print("No es un ejecutable de Windows (PE): no hay análisis estático de ejecutable.")
@@ -56,9 +65,10 @@ def mostrar_estatico(datos, antivirus, firma=None):
         incrustada = "lleva firma incrustada" if datos["firma_incrustada"] else "no lleva firma incrustada"
         print(f"Firma:         {incrustada}; sin verificar (el fichero está en memoria)")
     else:
-        firmante = firma["firmante"].split(",")[0].removeprefix("CN=")  # "CN=Microsoft Windows, O=..." → "Microsoft Windows"
+        firmante = nombre_firmante(firma)  # "CN=Microsoft Windows, O=..." → "Microsoft Windows"
         detalles = ", ".join(x for x in (firma["tipo"], firmante and f"firmante: {firmante}") if x)
         print(f"Firma:         {firma['estado']}" + (f" ({detalles})" if detalles else ""))
+    mostrar_suplantacion(suplantacion(datos, firma), firma is not None)
     mostrar_defender(antivirus)
     print("Secciones:")
     for s in datos["secciones"]:

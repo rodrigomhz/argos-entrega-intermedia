@@ -11,6 +11,66 @@ import pefile
 ARQUITECTURAS = {0x14C: "x86 (32 bits)", 0x8664: "x64 (64 bits)", 0xAA64: "ARM64"}
 # Por encima de esto, una sección parece comprimida o cifrada: indicio de empaquetado
 ENTROPIA_ALTA = 7.0
+# Palabras que no distinguen a un fabricante de otro: no cuentan al comparar nombres
+PALABRAS_GENERICAS = {
+    "the", "corporation", "corp", "incorporated", "inc", "ltd", "limited", "llc", "gmbh",
+    "company", "technologies", "technology", "software", "systems", "group", "international", "services",
+}
+# Lista corta y editable de fabricantes conocidos: no aparecer aquí no significa nada malo, solo que no se reconoce
+FABRICANTES_CONOCIDOS = {
+    "microsoft", "google", "apple", "mozilla", "adobe", "oracle", "intel", "nvidia", "amd", "dell",
+    "lenovo", "cisco", "ibm", "valve", "jetbrains", "python", "canonical", "vmware", "realtek",
+    "fortinet", "kaspersky", "bitdefender", "sophos", "avast", "malwarebytes", "mcafee", "symantec",
+}
+
+
+def _version(pe):
+    """Lo que el fichero dice de sí mismo en su bloque de versión: empresa y nombre original ("" si no los lleva)."""
+    campos = {}
+    for fileinfo in getattr(pe, "FileInfo", None) or []:
+        for entrada in fileinfo:
+            if entrada.Key == b"StringFileInfo":
+                for tabla in entrada.StringTable:
+                    for clave, valor in tabla.entries.items():
+                        campos[clave.decode(errors="replace")] = valor.decode(errors="replace").rstrip("\0")
+    # Sin CompanyName, algunos ficheros de Windows solo llevan ProductName: sirve igual para comparar
+    return {
+        "empresa": campos.get("CompanyName", "") or campos.get("ProductName", ""),
+        "nombre_original": campos.get("OriginalFilename", ""),
+    }
+
+
+def _relleno_certificado(blob):
+    """Bytes del certificado que no son el bloque PKCS#7 en sí: su tamaño real está en la cabecera DER."""
+    if len(blob) < 4 or blob[0] != 0x30:
+        return 0
+    if blob[1] < 0x80:
+        cabecera, contenido = 2, blob[1]
+    else:
+        n = blob[1] & 0x7F
+        if 2 + n > len(blob):
+            return 0
+        cabecera, contenido = 2 + n, int.from_bytes(blob[2:2 + n], "big")
+    return max(0, len(blob) - cabecera - contenido)
+
+
+def _zona_firma(datos, seguridad):
+    """Números de la zona de firma incrustada: bytes añadidos al final, huecos sin certificado y relleno de más.
+
+    Aquí no se valida el certificado (eso es cosa de Windows): se mira que los bytes cuadren con lo que la firma declara.
+    None si el fichero no lleva firma incrustada.
+    """
+    if seguridad.Size == 0:
+        return None
+    offset, fin = seguridad.VirtualAddress, seguridad.VirtualAddress + seguridad.Size
+    pos, relleno = offset, 0
+    while pos + 8 <= fin:
+        largo = int.from_bytes(datos[pos:pos + 4], "little")
+        if largo < 8 or pos + largo > fin:
+            break  # entrada rota o que se sale de la tabla: lo que quede se cuenta como hueco
+        relleno += _relleno_certificado(datos[pos + 8:pos + largo])
+        pos += (largo + 7) & ~7  # cada entrada empieza en un múltiplo de 8
+    return {"tras": len(datos) - fin, "dentro": fin - pos, "relleno": relleno}
 
 
 def analizar_pe(datos):
@@ -39,6 +99,8 @@ def analizar_pe(datos):
         "arquitectura": ARQUITECTURAS.get(maquina, hex(maquina)),
         "compilado": datetime.fromtimestamp(pe.FILE_HEADER.TimeDateStamp, timezone.utc).date().isoformat(),
         "firma_incrustada": seguridad.Size > 0,
+        "version": _version(pe),
+        "zona_firma": _zona_firma(datos, seguridad),
         "secciones": secciones,
         "importaciones": importaciones,
     }
@@ -69,6 +131,55 @@ def verificar_firma(ruta):
         "tipo": {"Authenticode": "incrustada en el fichero", "Catalog": "en un catálogo de Windows"}.get(firma["tipo"], ""),
         "firmante": firma["firmante"] or "",
     }
+
+
+def nombre_firmante(firma):
+    """«CN=Microsoft Windows, O=...» → «Microsoft Windows»"""
+    return firma["firmante"].split(",")[0].removeprefix("CN=").strip()
+
+
+def _palabras(texto):
+    """Palabras sueltas para comparar nombres: en minúsculas y sin las genéricas («Corporation», «Ltd»...)."""
+    return {p for p in re.findall(r"[a-z0-9]+", texto.lower()) if len(p) > 2 and p not in PALABRAS_GENERICAS}
+
+
+def suplantacion(datos, firma):
+    """Indicios de suplantación de un PE ya analizado, en texto llano (lista; vacía si no hay).
+
+    Compara los datos de versión con el firmante, avisa de firmantes desconocidos y revisa la zona de firma.
+    Con firma=None (fichero en memoria que no se pudo verificar) solo se puede revisar la zona de firma.
+    """
+    avisos = []
+    version = datos["version"]
+    empresa = version["empresa"]
+    nombre_original = f" ({version['nombre_original']})" if version["nombre_original"] else ""
+    palabras_empresa = _palabras(empresa)
+    if firma is not None:
+        palabras_firma = _palabras(firma["firmante"])
+        # Marcas conocidas que el fichero dice ser: si lo firma otra cosa (o nadie), es el caso clásico de suplantación
+        marca = palabras_empresa & FABRICANTES_CONOCIDOS
+        if firma["estado"] == "sin firma":
+            if datos["firma_incrustada"]:
+                avisos.append("hay firma incrustada, pero Windows ya no la reconoce: el fichero se modificó después de firmarlo")
+            elif marca:
+                avisos.append(f"posible suplantación: dice ser «{empresa}»{nombre_original} y el fichero no está firmado")
+        else:
+            # «microsoft» va aparte: Microsoft firma también software de otros (controladores con WHQL)
+            if marca and "microsoft" not in palabras_firma and not (marca & palabras_firma):
+                avisos.append(f"posible suplantación: dice ser «{empresa}»{nombre_original} y firma «{nombre_firmante(firma)}»")
+            if palabras_firma and not (palabras_firma & FABRICANTES_CONOCIDOS):
+                avisos.append(f"firmante poco conocido: «{nombre_firmante(firma)}» no está en la lista de fabricantes conocidos de Argos")
+    zona = datos["zona_firma"]
+    if zona is not None:
+        if zona["tras"] > 0:
+            avisos.append(f"{zona['tras']} bytes añadidos después de la firma incrustada")
+        elif zona["tras"] < 0:
+            avisos.append("la zona de firma incrustada se sale del fichero: recortado o manipulado")
+        if zona["dentro"] > 0:
+            avisos.append(f"{zona['dentro']} bytes dentro de la zona de firma que no pertenecen a ningún certificado")
+        if zona["relleno"] > 7:
+            avisos.append(f"{zona['relleno']} bytes de relleno dentro de la firma, más de lo que ocupa el certificado")
+    return avisos
 
 
 MPCMDRUN = Path(os.environ["ProgramFiles"]) / "Windows Defender" / "MpCmdRun.exe"
