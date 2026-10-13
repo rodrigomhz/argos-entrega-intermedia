@@ -45,18 +45,25 @@ def identificar(ruta):
     return _ficha(huella256, huella1, ruta.stat().st_size, tipo, ruta.name)
 
 
-def identificar_zip(ruta_zip, clave):
-    """[(nombre dentro del zip, ficha)] de cada fichero del zip. Todo en memoria: nada se escribe al disco."""
-    magika = Magika()
-    fichas = []
+def miembros_zip(ruta_zip, clave):
+    """(nombre dentro del zip, bytes) de cada fichero del zip. Todo en memoria: nada se escribe al disco."""
     with pyzipper.AESZipFile(ruta_zip) as z:
         z.setpassword(clave.encode())
         for info in z.infolist():
             if info.is_dir():
                 continue
             # ponytail: cada fichero entero en memoria (falla si no cabe en la RAM, p. ej. una bomba zip); mejorar: z.open() en bloques y un tope de tamaño
-            datos = z.read(info)
-            huella256, huella1 = _huellas([datos])
-            tipo = magika.identify_bytes(datos).output
-            fichas.append((info.filename, _ficha(huella256, huella1, len(datos), tipo, info.filename)))
-    return fichas
+            yield info.filename, z.read(info)
+
+
+def identificar_datos(datos, nombre, magika):
+    """La misma ficha que identificar(), para unos bytes que ya están en memoria."""
+    huella256, huella1 = _huellas([datos])
+    tipo = magika.identify_bytes(datos).output
+    return _ficha(huella256, huella1, len(datos), tipo, nombre)
+
+
+def identificar_zip(ruta_zip, clave):
+    """[(nombre dentro del zip, ficha)] de cada fichero del zip."""
+    magika = Magika()
+    return [(nombre, identificar_datos(datos, nombre, magika)) for nombre, datos in miembros_zip(ruta_zip, clave)]

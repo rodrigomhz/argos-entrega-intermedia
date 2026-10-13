@@ -7,7 +7,7 @@ name = "argos"
 dynamic = ["version"]
 description = "Analizador local de ficheros sospechosos"
 requires-python = ">=3.12"
-dependencies = ["magika>=1.0,<2", "pyzipper>=0.4,<1"]
+dependencies = ["magika>=1.0,<2", "pyzipper>=0.4,<1", "pefile>=2024.8.26"]
 
 [project.scripts]
 argos = "argos.__main__:main"
