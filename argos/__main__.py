@@ -7,7 +7,7 @@ import pyzipper
 from magika import Magika
 
 from argos import __version__, listas
-from argos.estatico import ENTROPIA_ALTA, analizar_pe, verificar_firma
+from argos.estatico import ENTROPIA_ALTA, analizar_pe, defender, defender_datos, verificar_firma
 from argos.identificacion import identificar, identificar_datos, miembros_zip
 
 
@@ -40,9 +40,15 @@ def mostrar(datos):
     print(f"         CIRCL{legitimo}")
 
 
-def mostrar_estatico(datos, firma=None):
+def mostrar_defender(antivirus):
+    detalle = f" ({antivirus['detalle']})" if antivirus["detalle"] else ""
+    print(f"Defender:      {antivirus['estado']}{detalle}")
+
+
+def mostrar_estatico(datos, antivirus, firma=None):
     if datos is None:
         print("No es un ejecutable de Windows (PE): no hay análisis estático de ejecutable.")
+        mostrar_defender(antivirus)
         return
     print(f"Arquitectura:  {datos['arquitectura']}")
     print(f"Compilado:     {datos['compilado']} (lo escribe el compilador: puede ser falso)")
@@ -53,6 +59,7 @@ def mostrar_estatico(datos, firma=None):
         firmante = firma["firmante"].split(",")[0].removeprefix("CN=")  # "CN=Microsoft Windows, O=..." → "Microsoft Windows"
         detalles = ", ".join(x for x in (firma["tipo"], firmante and f"firmante: {firmante}") if x)
         print(f"Firma:         {firma['estado']}" + (f" ({detalles})" if detalles else ""))
+    mostrar_defender(antivirus)
     print("Secciones:")
     for s in datos["secciones"]:
         alta = "  ← ENTROPÍA ALTA" if s["entropia"] > ENTROPIA_ALTA else ""
@@ -94,7 +101,7 @@ def main():
         else:
             # ponytail: el fichero entero en memoria; los ejecutables suelen ocupar poco
             datos = analizar_pe(Path(args.fichero).read_bytes())
-            mostrar_estatico(datos, verificar_firma(args.fichero) if datos else None)
+            mostrar_estatico(datos, defender(args.fichero), verificar_firma(args.fichero) if datos else None)
         return
 
     magika = Magika() if args.orden == "identifica" else None
@@ -105,7 +112,9 @@ def main():
         if args.orden == "identifica":
             mostrar(identificar_datos(datos, nombre, magika))
         else:
-            mostrar_estatico(analizar_pe(datos))
+            pe = analizar_pe(datos)
+            antivirus, firma = defender_datos(datos, nombre, verificar=pe is not None)
+            mostrar_estatico(pe, antivirus, firma)
 
 
 if __name__ == "__main__":
