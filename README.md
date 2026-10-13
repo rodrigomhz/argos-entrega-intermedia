@@ -1,53 +1,69 @@
 # Argos
 
-> Local malware analysis sandbox — offline alternative to any.run / CAPE
+> Analizador local de ficheros sospechosos: una alternativa sin conexión a any.run, VirusTotal y CAPE
 
-Argos is a self-hosted malware analysis platform that runs entirely offline. **No samples leave your machine.**
+Argos analiza ficheros sospechosos íntegramente en tu equipo. **Por defecto, ninguna muestra sale de tu máquina.**
 
-## What it does
+## Qué hace
 
-- **Static analysis** — file type, PE headers, imports table, strings, entropy, packer detection
-- **Dynamic analysis** — isolated VM sandbox via VMware/vmrun, behavior capture with Noriben + CAPEsolo
-- **Behavior report** — process tree, network calls, file system & registry changes
-- **Ensemble scorer** — local ML classifier + signature rules → verdict
-- **VirusTotal-style interface** — no uploads, no external dependencies
+- **Identificación**: huellas SHA-256 y SHA-1, tipo real del fichero con Magika (avisa si la extensión engaña) y si figura en listas locales de malware conocido (MalwareBazaar) y de software conocido (CIRCL hashlookup). Analiza ficheros dentro de zips cifrados sin extraerlos al disco.
+- **Análisis estático**: cabeceras PE, firma, secciones y entropía, funciones importadas, reglas YARA, detección de empaquetadores, Microsoft Defender en local y el modelo de detección EMBER2024.
+- **Análisis dinámico**: máquina virtual desechable con VMware y `vmrun`; el comportamiento se recoge con CAPEsolo, Noriben o ambos.
+- **Informe**: árbol de procesos, conexiones de red y cambios en ficheros y registro, en una interfaz web local.
+- **Veredicto**: combina todas las evidencias con reglas explícitas; cada conclusión se puede seguir hasta la prueba que la produjo.
 
-## Why offline
+**Modo conectado (opcional):** consulta VirusTotal, abuse.ch y CIRCL enviando solo huellas e indicadores de red, nunca el fichero. Su resultado se muestra aparte y no cambia el veredicto.
 
-Hard requirement: malware samples must not be submitted to external services.  
-Argos replaces any.run / VirusTotal / CAPE for lab environments where network egress is locked down or sample confidentiality is required.
+## Por qué en local
 
-## Architecture
+Requisito de partida: las muestras no se envían a servicios externos. Argos sustituye a any.run, VirusTotal o CAPE en laboratorios sin salida a internet o cuando la muestra es confidencial.
+
+## Arquitectura
 
 ```
-sample ──► static engine ──► PE parser / strings / entropy / imports
+muestra ──► identificación ──► huellas · tipo (Magika) · listas locales
         │
-        └─► dynamic engine ──► vmrun sandbox ──► Noriben / CAPEsolo
-                                                         │
-                                         behavior report ◄─────────────┘
-                                                │
-                                    ensemble scorer ──► verdict
+        ├─► estático ───────► PE · firma · entropía · importaciones · YARA · Defender · EMBER2024
+        │
+        └─► dinámico ───────► VM con vmrun ──► CAPEsolo / Noriben
+                                                     │
+                       combinación de evidencias ◄───┘
+                                │
+                                └──► veredicto e informe web
 ```
 
-## Stack
+## Tecnología
 
-- **Host**: Windows 10/11
-- **Sandbox**: VMware Workstation Pro + vmrun
-- **Behavior capture**: Noriben (procmon-based), CAPEsolo
-- **Static**: Python 3.10+, pefile, YARA
-- **Backend**: Node.js
-- **Classifier**: local model, no cloud inference
+- **Anfitrión**: Windows 10/11
+- **Lenguaje**: Python 3.12
+- **Identificación**: hashlib, Magika, pyzipper
+- **Estático**: pefile, YARA-X, capa, Detect It Easy, Microsoft Defender, EMBER2024 (LightGBM)
+- **Dinámico**: VMware Workstation y `vmrun`; CAPEsolo y Noriben
+- **IA**: solo modelos locales para analizar (Magika, EMBER2024); un modelo de lenguaje opcional, solo para explicar el informe
 
-## Status
+## Estado
 
-Active development. Static analysis + dynamic pipeline functional. Ensemble scorer in progress.
+En desarrollo, por hitos. Hechos: entorno de desarrollo e identificación de ficheros. Siguiente: análisis estático. Después: interfaz web, análisis dinámico, evaluación con muestras reales y empaquetado.
 
-## Requirements
+## Uso (lo que funciona hoy)
 
-- VMware Workstation Pro with a clean Windows VM snapshot
-- Python 3.10+
-- Node.js 18+
+```
+python -m venv %USERPROFILE%\venvs\argos
+%USERPROFILE%\venvs\argos\Scripts\pip install -e .
+%USERPROFILE%\venvs\argos\Scripts\argos identifica <fichero>
+%USERPROFILE%\venvs\argos\Scripts\argos identifica muestra.zip --clave infected
+```
+
+Las listas locales van en `%USERPROFILE%\argos-datos\listas\`:
+
+- `malwarebazaar-sha256.zip`: https://bazaar.abuse.ch/export/txt/sha256/full/
+- `circl-hashlookup-full.bloom`: https://cra.circl.lu/hashlookup/hashlookup-full.bloom (1 GB)
+
+## Requisitos
+
+- Windows 10/11 de 64 bits y Python 3.12
+- Para el análisis dinámico: VMware Workstation y una máquina virtual Windows con una instantánea limpia
 
 ---
 
-*Part of a personal malware lab built for learning advanced malware analysis and detection engineering.*
+*Proyecto de la asignatura Proyectos de Ciberseguridad (U-tad) y parte de un laboratorio personal para aprender análisis de malware e ingeniería de detección.*
