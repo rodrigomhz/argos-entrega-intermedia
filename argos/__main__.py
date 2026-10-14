@@ -1,5 +1,6 @@
 import argparse
 import sys
+from http.client import HTTPException
 from pathlib import Path
 
 import pyzipper
@@ -7,7 +8,8 @@ import pyzipper
 from magika import Magika
 
 from argos import __version__, listas
-from argos.estatico import ENTROPIA_ALTA, analizar_pe, defender, defender_datos, nombre_firmante, suplantacion, verificar_firma
+from argos.actualiza import actualizar
+from argos.estatico import ENTROPIA_ALTA, analizar_pe, defender, defender_datos, nombre_firmante, suplantacion, verificar_firma, yara
 from argos.identificacion import identificar, identificar_datos, miembros_zip
 
 
@@ -22,12 +24,12 @@ def mostrar(datos):
 
     # Cada lista da None (falta el fichero) o (está, fecha)
     if datos["malwarebazaar"] is None:
-        malware = f": no disponible (falta {listas.MALWAREBAZAAR})"
+        malware = f": no disponible (falta {listas.MALWAREBAZAAR}; ejecuta «argos actualiza»)"
     else:
         esta, fecha = datos["malwarebazaar"]
         malware = f" (lista del {fecha}): " + ("MALWARE CONOCIDO" if esta else "no figura como malware conocido")
     if datos["circl"] is None:
-        legitimo = f": no disponible (falta {listas.CIRCL})"
+        legitimo = f": no disponible (falta {listas.CIRCL}; ejecuta «argos actualiza»)"
     else:
         esta, fecha = datos["circl"]
         # CIRCL (NSRL) recoge software publicado, no software seguro: EICAR figura porque venía en una distribución de Linux
@@ -45,6 +47,17 @@ def mostrar_defender(antivirus):
     print(f"Defender:      {antivirus['estado']}{detalle}")
 
 
+def mostrar_yara(coincidencias):
+    if coincidencias is None:
+        resultado = "no disponible (ejecuta «argos actualiza»)"
+    elif not coincidencias:
+        resultado = "sin coincidencias"
+    else:
+        reglas = ", ".join(f"{nombre} ({descripcion})" if descripcion else nombre for nombre, descripcion in coincidencias)
+        resultado = f"{len(coincidencias)} {'regla' if len(coincidencias) == 1 else 'reglas'}: {reglas}"
+    print(f"YARA:          {resultado}")
+
+
 def mostrar_suplantacion(avisos, firma_leida):
     if not avisos:
         falta = "sin indicios" if firma_leida else "sin comprobar (no se leyó la firma: el fichero está en memoria)"
@@ -54,10 +67,11 @@ def mostrar_suplantacion(avisos, firma_leida):
         print(("Suplantación:  " if i == 0 else "               ") + aviso)
 
 
-def mostrar_estatico(datos, antivirus, firma=None):
+def mostrar_estatico(datos, antivirus, coincidencias, firma=None):
     if datos is None:
         print("No es un ejecutable de Windows (PE): no hay análisis estático de ejecutable.")
         mostrar_defender(antivirus)
+        mostrar_yara(coincidencias)
         return
     print(f"Arquitectura:  {datos['arquitectura']}")
     print(f"Compilado:     {datos['compilado']} (lo escribe el compilador: puede ser falso)")
@@ -70,6 +84,7 @@ def mostrar_estatico(datos, antivirus, firma=None):
         print(f"Firma:         {firma['estado']}" + (f" ({detalles})" if detalles else ""))
     mostrar_suplantacion(suplantacion(datos, firma), firma is not None)
     mostrar_defender(antivirus)
+    mostrar_yara(coincidencias)
     print("Secciones:")
     for s in datos["secciones"]:
         alta = "  ← ENTROPÍA ALTA" if s["entropia"] > ENTROPIA_ALTA else ""
@@ -94,6 +109,8 @@ def main():
     parser = argparse.ArgumentParser(prog="argos", description="Analizador local de ficheros sospechosos")
     parser.add_argument("--version", action="version", version=f"argos {__version__}")
     ordenes = parser.add_subparsers(dest="orden")
+    actualiza = ordenes.add_parser("actualiza", help="descarga y pone al día las reglas YARA y las listas")
+    actualiza.add_argument("--sin-circl", action="store_true", help="no descarga el filtro de CIRCL (1 GB)")
     for orden, ayuda in (("identifica", "huella, tipo y listas de un fichero"), ("estatico", "mira dentro de un ejecutable sin ejecutarlo")):
         sub = ordenes.add_parser(orden, help=ayuda)
         sub.add_argument("fichero")
@@ -101,6 +118,12 @@ def main():
     args = parser.parse_args()
     if args.orden is None:
         parser.print_help()
+        return
+    if args.orden == "actualiza":
+        try:
+            actualizar(args.sin_circl)
+        except (OSError, HTTPException) as error:  # sin red, servidor caído, disco lleno...: un mensaje, sin traza
+            sys.exit(f"error: no se pudo actualizar: {error}")
         return
     if not Path(args.fichero).is_file():
         parser.error(f"no existe el fichero: {args.fichero}")
@@ -110,8 +133,9 @@ def main():
             mostrar(identificar(args.fichero))
         else:
             # ponytail: el fichero entero en memoria; los ejecutables suelen ocupar poco
-            datos = analizar_pe(Path(args.fichero).read_bytes())
-            mostrar_estatico(datos, defender(args.fichero), verificar_firma(args.fichero) if datos else None)
+            contenido = Path(args.fichero).read_bytes()
+            datos = analizar_pe(contenido)
+            mostrar_estatico(datos, defender(args.fichero), yara(contenido), verificar_firma(args.fichero) if datos else None)
         return
 
     magika = Magika() if args.orden == "identifica" else None
@@ -124,7 +148,7 @@ def main():
         else:
             pe = analizar_pe(datos)
             antivirus, firma = defender_datos(datos, nombre, verificar=pe is not None)
-            mostrar_estatico(pe, antivirus, firma)
+            mostrar_estatico(pe, antivirus, yara(datos), firma)
 
 
 if __name__ == "__main__":

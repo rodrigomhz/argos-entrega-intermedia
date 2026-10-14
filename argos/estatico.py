@@ -1,12 +1,15 @@
+import functools
 import json
 import os
 import re
 import subprocess
 import tempfile
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
 
 import pefile
+import yara_x
 
 ARQUITECTURAS = {0x14C: "x86 (32 bits)", 0x8664: "x64 (64 bits)", 0xAA64: "ARM64"}
 # Por encima de esto, una sección parece comprimida o cifrada: indicio de empaquetado
@@ -269,3 +272,28 @@ def defender_datos(datos, nombre, verificar=False):
             amenaza = _amenaza_registrada(Path(carpeta).name)
             return {"estado": "DETECTADO", "detalle": amenaza or "nombre no disponible"}, None
         return _escanear(ruta), (verificar_firma(ruta) if verificar else None)
+
+
+REGLAS = Path.home() / "argos-datos" / "reglas"
+REGLAS_ZIP = "yara-forge-rules-core.zip"  # paquete "core" de YARA Forge: lo baja «argos actualiza»
+
+
+@functools.cache  # se compila una sola vez por ejecución, aunque haya muchos ficheros (un zip)
+def cargar_reglas():
+    """Las reglas de YARA Forge compiladas, o None si no se han descargado."""
+    ruta = REGLAS / REGLAS_ZIP
+    if not ruta.is_file():
+        return None
+    with zipfile.ZipFile(ruta) as z:
+        # El zip trae un solo .yar con todas las reglas
+        fuente = z.read(next(n for n in z.namelist() if n.endswith(".yar"))).decode()
+    # ponytail: compila las reglas en cada ejecución (~3,2 s las ~5.000 reglas de core, medido); mejorar: guardarlas ya compiladas con Rules.serialize_into y cargarlas con Rules.deserialize_from
+    return yara_x.compile(fuente)
+
+
+def yara(datos):
+    """[(nombre, descripción)] de las reglas YARA que coinciden con unos bytes; None si faltan las reglas."""
+    reglas = cargar_reglas()
+    if reglas is None:
+        return None
+    return [(r.identifier, dict(r.metadata).get("description", "")) for r in reglas.scan(datos).matching_rules]

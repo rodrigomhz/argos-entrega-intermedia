@@ -43,21 +43,32 @@ muestra ──► identificación ──► huellas · tipo (Magika) · listas l
 
 ## Estado
 
-En desarrollo, por hitos. Hechos: entorno de desarrollo e identificación de ficheros. Siguiente: análisis estático. Después: interfaz web, análisis dinámico, evaluación con muestras reales y empaquetado.
+En desarrollo, por hitos. Hechos: entorno de desarrollo e identificación de ficheros. En curso: análisis estático (ya hay secciones, entropía, importaciones, firma, suplantación, Defender y reglas YARA; faltan capa, Detect It Easy y EMBER2024). Después: interfaz web, análisis dinámico, evaluación con muestras reales y empaquetado.
 
 ## Uso (lo que funciona hoy)
+
+**1. Instalar**
 
 ```
 python -m venv %USERPROFILE%\venvs\argos
 %USERPROFILE%\venvs\argos\Scripts\pip install -e .
-%USERPROFILE%\venvs\argos\Scripts\argos identifica <fichero>
-%USERPROFILE%\venvs\argos\Scripts\argos identifica muestra.zip --clave infected
 ```
 
-Las listas locales van en `%USERPROFILE%\argos-datos\listas\`:
+**2. Descargar los datos**
 
-- `malwarebazaar-sha256.zip`: https://bazaar.abuse.ch/export/txt/sha256/full/
-- `circl-hashlookup-full.bloom`: https://cra.circl.lu/hashlookup/hashlookup-full.bloom (1 GB)
+```
+%USERPROFILE%\venvs\argos\Scripts\argos actualiza
+```
+
+Baja a `%USERPROFILE%\argos-datos\` las reglas YARA (paquete core de YARA Forge) y las listas de MalwareBazaar y CIRCL. Solo descarga lo que haya cambiado, así que puedes repetirlo cuando quieras. El filtro de CIRCL pesa 1 GB; `argos actualiza --sin-circl` se lo salta.
+
+**3. Usar**
+
+```
+%USERPROFILE%\venvs\argos\Scripts\argos identifica <fichero>
+%USERPROFILE%\venvs\argos\Scripts\argos estatico <fichero>
+%USERPROFILE%\venvs\argos\Scripts\argos estatico muestra.zip --clave infected
+```
 
 ## Requisitos
 
