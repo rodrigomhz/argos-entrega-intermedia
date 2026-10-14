@@ -25,11 +25,14 @@ assert verificar_firma(Path(sys.executable).with_name("argos.exe"))["estado"] ==
 assert suplantacion(datos, firma) == []
 assert datos["zona_firma"] is None
 
-# ...pero si los datos de versión dicen ser de Microsoft y firma otro, avisa (y el firmante tampoco es conocido)
+# ...pero si los datos de versión dicen ser de Microsoft y firma otro, avisa
 datos_mentirosos = {**datos, "version": {"empresa": "Microsoft Corporation", "nombre_original": "NOTEPAD.EXE"}}
 avisos = suplantacion(datos_mentirosos, {"estado": "válida", "tipo": "incrustada en el fichero", "firmante": "CN=Evil Lda, O=Evil Lda"})
 assert any("suplantación" in a and "Evil Lda" in a for a in avisos), avisos
-assert any("poco conocido" in a for a in avisos), avisos
+
+# Un fabricante legítimo que no está en la lista de Argos y firma lo suyo no es suplantación: no da aviso
+datos_nextcloud = {**datos, "version": {"empresa": "Nextcloud GmbH", "nombre_original": "nextcloud.exe"}}
+assert suplantacion(datos_nextcloud, {"estado": "válida", "tipo": "incrustada en el fichero", "firmante": "CN=Nextcloud GmbH, O=Nextcloud GmbH"}) == []
 
 # Sin firma y diciendo ser de Microsoft: también avisa
 assert any("no está firmado" in a for a in suplantacion(datos_mentirosos, {"estado": "sin firma", "tipo": "", "firmante": ""}))

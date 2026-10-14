@@ -167,8 +167,6 @@ def suplantacion(datos, firma):
             # «microsoft» va aparte: Microsoft firma también software de otros (controladores con WHQL)
             if marca and "microsoft" not in palabras_firma and not (marca & palabras_firma):
                 avisos.append(f"posible suplantación: dice ser «{empresa}»{nombre_original} y firma «{nombre_firmante(firma)}»")
-            if palabras_firma and not (palabras_firma & FABRICANTES_CONOCIDOS):
-                avisos.append(f"firmante poco conocido: «{nombre_firmante(firma)}» no está en la lista de fabricantes conocidos de Argos")
     zona = datos["zona_firma"]
     if zona is not None:
         if zona["tras"] > 0:
