@@ -70,6 +70,8 @@ Baja a `%USERPROFILE%\argos-datos\` las reglas YARA (paquete core de YARA Forge)
 %USERPROFILE%\venvs\argos\Scripts\argos estatico muestra.zip --clave infected
 ```
 
+Antes de analizar, Argos comprueba (como mucho una vez cada 24 horas) si hay datos nuevos y, si los hay, te lo dice y te ofrece actualizarlos al momento; con `--sin-red` no comprueba nada por red.
+
 ## Requisitos
 
 - Windows 10/11 de 64 bits y Python 3.12

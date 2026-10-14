@@ -8,7 +8,7 @@ import pyzipper
 from magika import Magika
 
 from argos import __version__, listas
-from argos.actualiza import actualizar
+from argos.actualiza import actualizar, avisar
 from argos.estatico import ENTROPIA_ALTA, analizar_pe, defender, defender_datos, nombre_firmante, suplantacion, verificar_firma, yara
 from argos.identificacion import identificar, identificar_datos, miembros_zip
 
@@ -115,6 +115,7 @@ def main():
         sub = ordenes.add_parser(orden, help=ayuda)
         sub.add_argument("fichero")
         sub.add_argument("--clave", help="contraseña: abre el fichero como zip y analiza cada fichero de dentro, sin extraerlo")
+        sub.add_argument("--sin-red", action="store_true", help="no comprueba por red si hay datos nuevos")
     args = parser.parse_args()
     if args.orden is None:
         parser.print_help()
@@ -127,6 +128,8 @@ def main():
         return
     if not Path(args.fichero).is_file():
         parser.error(f"no existe el fichero: {args.fichero}")
+    if not args.sin_red:
+        avisar()
 
     if args.clave is None:
         if args.orden == "identifica":
