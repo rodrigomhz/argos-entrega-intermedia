@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import re
@@ -14,7 +15,7 @@ from pathlib import Path
 
 import capa.version
 
-from argos import herramientas, listas
+from argos import ember, herramientas, listas
 from argos.estatico import REGLAS, REGLAS_ZIP
 
 # La última versión publicada de YARA Forge (paquete "core"), por la API de GitHub y sin cuenta
@@ -40,7 +41,8 @@ ULTIMA_COMPROBACION = REGLAS.parent / "ultima-comprobacion"  # en argos-datos, j
 # version solo la llevan las reglas y las herramientas: es lo que se anota al terminar
 # instalador: lo llevan las herramientas, que son una carpeta entera y la deja esa función (instalar, instalar_capa)
 # tamano None: la descarga no lo anuncia (el zip de reglas de capa viene de codeload, que lo manda por partes y sin Content-Length)
-Pendiente = namedtuple("Pendiente", "nombre motivo tamano url destino version instalador", defaults=[None, None])
+# huella: la SHA-256 que tiene que tener lo descargado (el modelo EMBER2024): descargar() la comprueba antes de dejarlo en su sitio
+Pendiente = namedtuple("Pendiente", "nombre motivo tamano url destino version instalador huella", defaults=[None, None, None])
 
 
 def mb(tamano):
@@ -55,8 +57,14 @@ def abrir(url, metodo="GET", espera=ESPERA):
     return urllib.request.urlopen(urllib.request.Request(url, method=metodo), timeout=espera)
 
 
-def descargar(url, destino, esperado):
-    """Baja url a un fichero temporal junto a destino y solo lo renombra si llegó con los bytes anunciados (esperado None: no los anuncia y no se comprueban)."""
+def sha256(ruta):
+    with ruta.open("rb") as f:
+        return hashlib.file_digest(f, "sha256").hexdigest()
+
+
+def descargar(url, destino, esperado, huella=None):
+    """Baja url a un fichero temporal junto a destino y solo lo renombra si llegó con los bytes anunciados (esperado None: no los anuncia y no se comprueban)
+    y, si se da huella, con esa SHA-256: lo que no coincide no llega a su sitio y la copia que hubiera antes sigue intacta."""
     destino.parent.mkdir(parents=True, exist_ok=True)
     temporal = destino.with_name(destino.name + ".parte")
     try:
@@ -66,6 +74,8 @@ def descargar(url, destino, esperado):
         recibidos = temporal.stat().st_size
         if esperado is not None and recibidos != esperado:  # si la conexión se corta, Python no avisa: el fichero solo queda más corto
             raise OSError(f"la descarga llegó incompleta ({mb(recibidos)} de {mb(esperado)})")
+        if huella is not None and (obtenida := sha256(temporal)) != huella:
+            raise OSError(f"la descarga no coincide con la huella publicada (SHA-256 {obtenida}, y debía ser {huella})")
         os.replace(temporal, destino)
     finally:
         temporal.unlink(missing_ok=True)  # tras el replace ya no existe; si algo falló, no deja el temporal
@@ -124,6 +134,19 @@ def pendiente_capa():
     return Pendiente(f"reglas y firmas de capa {version}", motivo, None, URL_REGLAS_CAPA.format(version), carpeta, version, instalar_capa)
 
 
+def pendiente_modelo():
+    """Pendiente con el modelo EMBER2024 si falta o su SHA-256 no es la publicada; None si está al día. No usa la red."""
+    # La URL está fijada a una revisión de HuggingFace y no hay «versión más nueva» que preguntar: lo único que se comprueba es la copia del disco
+    destino = ember.CARPETA / ember.MODELO
+    if not destino.is_file():
+        motivo = "no hay copia"
+    elif sha256(destino) != ember.SHA256:
+        motivo = "tu copia no coincide con la huella publicada"
+    else:
+        return None
+    return Pendiente("modelo EMBER2024", motivo, ember.TAMANO, ember.URL, destino, huella=ember.SHA256)
+
+
 def pendiente_lista(nombre, fichero, url, espera):
     """Pendiente con una lista si falta o el servidor tiene una versión más nueva que el fichero del disco; None si está al día."""
     destino = listas.CARPETA / fichero
@@ -153,6 +176,7 @@ def comprobar(sin_circl, espera=ESPERA):
     # Las herramientas, al final: si una falla (p. ej. Defender bloquea la descarga), lo demás ya está al día
     pendientes.append(pendiente_herramienta("die", "Detect It Easy", API_DIE, ZIP_DIE, espera))
     pendientes.append(pendiente_capa())
+    pendientes.append(pendiente_modelo())
     return [p for p in pendientes if p]
 
 
@@ -230,7 +254,7 @@ def actualizar(sin_circl=False, pendientes=None):
         if p.instalador:
             p.instalador(p)
         else:
-            descargar(p.url, p.destino, p.tamano)
+            descargar(p.url, p.destino, p.tamano, p.huella)
             if p.version:
                 VERSION_REGLAS.write_text(p.version)  # la última: si algo falla antes, la próxima vez vuelve a descargar
         print(f"{p.nombre}: hecho")

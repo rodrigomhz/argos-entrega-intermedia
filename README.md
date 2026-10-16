@@ -43,7 +43,7 @@ muestra ──► identificación ──► huellas · tipo (Magika) · listas l
 
 ## Estado
 
-En desarrollo, por hitos. Hechos: entorno de desarrollo e identificación de ficheros. En curso: análisis estático (ya hay secciones, entropía, importaciones, firma, suplantación, Defender, reglas YARA, capa y Detect It Easy; falta EMBER2024). Después: interfaz web, análisis dinámico, evaluación con muestras reales y empaquetado.
+En desarrollo, por hitos. Hechos: entorno de desarrollo e identificación de ficheros. En curso: análisis estático, con todas sus partes hechas y a falta de probarlo con una muestra real (secciones, entropía, importaciones, firma, suplantación, Defender, reglas YARA, capa, Detect It Easy y EMBER2024, de momento solo con su puntuación: el umbral se calibra en el hito 7). Después: interfaz web, análisis dinámico, evaluación con muestras reales y empaquetado.
 
 ## Uso (lo que funciona hoy)
 
@@ -60,7 +60,7 @@ python -m venv %USERPROFILE%\venvs\argos
 %USERPROFILE%\venvs\argos\Scripts\argos actualiza
 ```
 
-Baja a `%USERPROFILE%\argos-datos\` las reglas YARA (paquete core de YARA Forge), las listas de MalwareBazaar y CIRCL y las dos herramientas externas, cada una de su repositorio oficial de GitHub y con su licencia: [capa](https://github.com/mandiant/capa) de Mandiant (Apache-2.0), que dice qué sabe hacer un ejecutable y con qué técnica de MITRE ATT&CK, y [Detect It Easy](https://github.com/horsicq/DIE-engine) (MIT), que dice compilador, lenguaje y empaquetador. capa se instala con Argos (es una dependencia de pip, `flare-capa`) y `argos actualiza` solo baja sus reglas y firmas, siempre de la misma versión que la librería instalada; Detect It Easy se baja entero. `argos estatico` las ejecuta por su cuenta (capa tarda de uno a dos minutos con un ejecutable como notepad.exe). Solo descarga lo que haya cambiado, así que puedes repetirlo cuando quieras. El filtro de CIRCL pesa 1 GB; `argos actualiza --sin-circl` se lo salta.
+Baja a `%USERPROFILE%\argos-datos\` las reglas YARA (paquete core de YARA Forge), las listas de MalwareBazaar y CIRCL y las dos herramientas externas, cada una de su repositorio oficial de GitHub y con su licencia: [capa](https://github.com/mandiant/capa) de Mandiant (Apache-2.0), que dice qué sabe hacer un ejecutable y con qué técnica de MITRE ATT&CK, y [Detect It Easy](https://github.com/horsicq/DIE-engine) (MIT), que dice compilador, lenguaje y empaquetador. capa se instala con Argos (es una dependencia de pip, `flare-capa`) y `argos actualiza` solo baja sus reglas y firmas, siempre de la misma versión que la librería instalada; Detect It Easy se baja entero. `argos estatico` las ejecuta por su cuenta (capa tarda de uno a dos minutos con un ejecutable como notepad.exe). Baja también el modelo [EMBER2024](https://huggingface.co/joyce8/EMBER2024-benchmark-models) (3,8 MB, de HuggingFace, Apache-2.0): un modelo de LightGBM que da a un ejecutable de Windows una puntuación de 0 (parece legítimo) a 1 (parece malware) solo por su estructura, sin ejecutarlo; `argos estatico` la enseña, pero de momento no decide nada con ella (el umbral se calibra en el hito 7). La versión está fijada y se comprueba con su huella SHA-256 antes de guardarla, y saber si la copia está al día no usa la red; su código de extracción de características (`thrember`) llega con Argos por pip, desde un zip de GitHub. Solo descarga lo que haya cambiado, así que puedes repetirlo cuando quieras. El filtro de CIRCL pesa 1 GB; `argos actualiza --sin-circl` se lo salta.
 
 **3. Usar**
 

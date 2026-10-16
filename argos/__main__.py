@@ -7,7 +7,7 @@ import pyzipper
 
 from magika import Magika
 
-from argos import __version__, herramientas, listas
+from argos import __version__, ember, herramientas, listas
 from argos.actualiza import actualizar, avisar
 from argos.estatico import ENTROPIA_ALTA, analizar_copia, analizar_pe, defender, nombre_firmante, suplantacion, verificar_firma, yara
 from argos.identificacion import identificar, identificar_datos, miembros_zip
@@ -62,7 +62,7 @@ def mostrar_yara(coincidencias):
 
 
 def mostrar_herramienta(titulo, resultado, texto):
-    """Una línea de capa o Detect It Easy: texto(resultado) si funcionó; si no, el estado y su motivo."""
+    """Una línea de capa, Detect It Easy o EMBER2024: texto(resultado) si funcionó; si no, el estado y su motivo."""
     estado = resultado["estado"]
     if estado == "ok":
         linea = texto(resultado)
@@ -89,9 +89,22 @@ def texto_die(resultado):
     return "; ".join(detectado) or "no detecta compilador, lenguaje ni empaquetador"
 
 
-def mostrar_herramientas(capa, die):
+def texto_ember(resultado):
+    """«0,03 (0 = parece legítimo, 1 = parece malware; umbral sin calibrar hasta el hito 7)»: la puntuación con coma decimal y dos decimales."""
+    # Sin umbral a propósito: decir «sospechoso» a partir de un número sin haber medido sus falsos positivos sería inventárselo (se calibra en el hito 7)
+    puntuacion = f"{resultado['puntuacion']:.2f}".replace(".", ",")
+    return f"{puntuacion} (0 = parece legítimo, 1 = parece malware; umbral sin calibrar hasta el hito 7)"
+
+
+def puntuar_ember(datos, es_pe):
+    """Como herramientas.analizar: solo los ejecutables de Windows (PE) se puntúan. Trabaja con los bytes en memoria, sirve para un zip."""
+    return ember.puntuar(datos) if es_pe else {"estado": "no aplica", "detalle": "solo ejecutables de Windows (PE)"}
+
+
+def mostrar_herramientas(capa, die, puntuacion):
     mostrar_herramienta("Capacidades:   ", capa, texto_capa)
     mostrar_herramienta("Detect It Easy: ", die, texto_die)
+    mostrar_herramienta("EMBER2024:     ", puntuacion, texto_ember)
 
 
 def mostrar_suplantacion(avisos, firma_leida):
@@ -103,12 +116,12 @@ def mostrar_suplantacion(avisos, firma_leida):
         print(("Suplantación:  " if i == 0 else "               ") + aviso)
 
 
-def mostrar_estatico(datos, antivirus, coincidencias, firma, capa, die):
+def mostrar_estatico(datos, antivirus, coincidencias, firma, capa, die, puntuacion):
     if datos is None:
         print("No es un ejecutable de Windows (PE): no hay análisis estático de ejecutable.")
         mostrar_defender(antivirus)
         mostrar_yara(coincidencias)
-        mostrar_herramientas(capa, die)
+        mostrar_herramientas(capa, die, puntuacion)
         return
     print(f"Arquitectura:  {datos['arquitectura']}")
     print(f"Compilado:     {datos['compilado']} (lo escribe el compilador: puede ser falso)")
@@ -122,7 +135,7 @@ def mostrar_estatico(datos, antivirus, coincidencias, firma, capa, die):
     mostrar_suplantacion(suplantacion(datos, firma), firma is not None)
     mostrar_defender(antivirus)
     mostrar_yara(coincidencias)
-    mostrar_herramientas(capa, die)
+    mostrar_herramientas(capa, die, puntuacion)
     print("Secciones:")
     for s in datos["secciones"]:
         alta = "  ← ENTROPÍA ALTA" if s["entropia"] > ENTROPIA_ALTA else ""
@@ -147,7 +160,7 @@ def main():
     parser = argparse.ArgumentParser(prog="argos", description="Analizador local de ficheros sospechosos")
     parser.add_argument("--version", action="version", version=f"argos {__version__}")
     ordenes = parser.add_subparsers(dest="orden")
-    actualiza = ordenes.add_parser("actualiza", help="descarga y pone al día las reglas YARA, las listas, capa y Detect It Easy")
+    actualiza = ordenes.add_parser("actualiza", help="descarga y pone al día las reglas YARA, las listas, capa, Detect It Easy y el modelo EMBER2024")
     actualiza.add_argument("--sin-circl", action="store_true", help="no descarga el filtro de CIRCL (1 GB)")
     for orden, ayuda in (("identifica", "huella, tipo y listas de un fichero"), ("estatico", "mira dentro de un ejecutable sin ejecutarlo")):
         sub = ordenes.add_parser(orden, help=ayuda)
@@ -177,7 +190,8 @@ def main():
             contenido = Path(args.fichero).read_bytes()
             datos = analizar_pe(contenido)
             capa, die = herramientas.analizar(args.fichero, datos is not None)
-            mostrar_estatico(datos, defender(args.fichero), yara(contenido), verificar_firma(args.fichero) if datos else None, capa, die)
+            mostrar_estatico(datos, defender(args.fichero), yara(contenido), verificar_firma(args.fichero) if datos else None, capa, die,
+                             puntuar_ember(contenido, datos is not None))
         return
 
     magika = Magika() if args.orden == "identifica" else None
@@ -190,7 +204,7 @@ def main():
         else:
             pe = analizar_pe(datos)
             antivirus, firma, capa, die = analizar_copia(datos, nombre, pe is not None)
-            mostrar_estatico(pe, antivirus, yara(datos), firma, capa, die)
+            mostrar_estatico(pe, antivirus, yara(datos), firma, capa, die, puntuar_ember(datos, pe is not None))
 
 
 if __name__ == "__main__":

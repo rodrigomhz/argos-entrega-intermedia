@@ -7,7 +7,14 @@ name = "argos"
 dynamic = ["version"]
 description = "Analizador local de ficheros sospechosos"
 requires-python = ">=3.12"
-dependencies = ["magika>=1.0,<2", "pyzipper>=0.4,<1", "pefile>=2024.8.26", "yara-x>=1.21,<2", "flare-capa>=9.4,<10"]
+dependencies = [
+    "magika>=1.0,<2", "pyzipper>=0.4,<1", "pefile>=2024.8.26", "yara-x>=1.21,<2", "flare-capa>=9.4,<10",
+    # EMBER2024 (Apache-2.0): no está en PyPI, así que va el zip de su último commit (2025-08-22), sin necesitar git
+    "thrember @ https://github.com/FutureComputing4AI/EMBER2024/archive/0ef753e81d98bf209f71b03cd331dfc190b5b54d.zip",
+    # thrember pide signify>=0.7.1 sin tope y con la 0.8+ no arranca (ImportError: cannot import name 'SignedPEFile' from
+    # 'signify.authenticode'); la 0.7.x era la versión cuando se entrenó el modelo
+    "signify>=0.7.1,<0.8",
+]
 
 [project.scripts]
 argos = "argos.__main__:main"
