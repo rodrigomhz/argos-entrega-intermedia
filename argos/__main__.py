@@ -7,10 +7,13 @@ import pyzipper
 
 from magika import Magika
 
-from argos import __version__, listas
+from argos import __version__, herramientas, listas
 from argos.actualiza import actualizar, avisar
-from argos.estatico import ENTROPIA_ALTA, analizar_pe, defender, defender_datos, nombre_firmante, suplantacion, verificar_firma, yara
+from argos.estatico import ENTROPIA_ALTA, analizar_copia, analizar_pe, defender, nombre_firmante, suplantacion, verificar_firma, yara
 from argos.identificacion import identificar, identificar_datos, miembros_zip
+
+
+MOSTRAR_CAPACIDADES = 3  # cuántas capacidades de capa se enseñan; el resto solo se cuenta
 
 
 def mostrar(datos):
@@ -58,6 +61,39 @@ def mostrar_yara(coincidencias):
     print(f"YARA:          {resultado}")
 
 
+def mostrar_herramienta(titulo, resultado, texto):
+    """Una línea de capa o Detect It Easy: texto(resultado) si funcionó; si no, el estado y su motivo."""
+    estado = resultado["estado"]
+    if estado == "ok":
+        linea = texto(resultado)
+    elif estado == "no disponible":
+        linea = "no disponible (ejecuta «argos actualiza»)"
+    else:
+        linea = estado + (f": {resultado['detalle']}" if resultado["detalle"] else "")
+    print(f"{titulo}{linea}")
+
+
+def texto_capa(resultado):
+    """«12 (create process [T1106 Native API], …, y 9 más)»: pocas capacidades, con su técnica ATT&CK, y cuántas quedan."""
+    capacidades = resultado["capacidades"]
+    if not capacidades:
+        return "ninguna"
+    muestra = ", ".join(f"{nombre} [{tecnica}]" if tecnica else nombre for nombre, tecnica in capacidades[:MOSTRAR_CAPACIDADES])
+    resto = len(capacidades) - MOSTRAR_CAPACIDADES
+    return f"{len(capacidades)} ({muestra}{f', y {resto} más' if resto > 0 else ''})"
+
+
+def texto_die(resultado):
+    """«compilador: Microsoft Visual C/C++ 19.38.33145; …»: lo que DIE detectó y, de lo que no, que no detectó nada."""
+    detectado = [f"{etiqueta}: {', '.join(valores)}" for etiqueta, valores in resultado["detectado"].items() if valores]
+    return "; ".join(detectado) or "no detecta compilador, lenguaje ni empaquetador"
+
+
+def mostrar_herramientas(capa, die):
+    mostrar_herramienta("Capacidades:   ", capa, texto_capa)
+    mostrar_herramienta("Detect It Easy: ", die, texto_die)
+
+
 def mostrar_suplantacion(avisos, firma_leida):
     if not avisos:
         falta = "sin indicios" if firma_leida else "sin comprobar (no se leyó la firma: el fichero está en memoria)"
@@ -67,11 +103,12 @@ def mostrar_suplantacion(avisos, firma_leida):
         print(("Suplantación:  " if i == 0 else "               ") + aviso)
 
 
-def mostrar_estatico(datos, antivirus, coincidencias, firma=None):
+def mostrar_estatico(datos, antivirus, coincidencias, firma, capa, die):
     if datos is None:
         print("No es un ejecutable de Windows (PE): no hay análisis estático de ejecutable.")
         mostrar_defender(antivirus)
         mostrar_yara(coincidencias)
+        mostrar_herramientas(capa, die)
         return
     print(f"Arquitectura:  {datos['arquitectura']}")
     print(f"Compilado:     {datos['compilado']} (lo escribe el compilador: puede ser falso)")
@@ -85,6 +122,7 @@ def mostrar_estatico(datos, antivirus, coincidencias, firma=None):
     mostrar_suplantacion(suplantacion(datos, firma), firma is not None)
     mostrar_defender(antivirus)
     mostrar_yara(coincidencias)
+    mostrar_herramientas(capa, die)
     print("Secciones:")
     for s in datos["secciones"]:
         alta = "  ← ENTROPÍA ALTA" if s["entropia"] > ENTROPIA_ALTA else ""
@@ -109,7 +147,7 @@ def main():
     parser = argparse.ArgumentParser(prog="argos", description="Analizador local de ficheros sospechosos")
     parser.add_argument("--version", action="version", version=f"argos {__version__}")
     ordenes = parser.add_subparsers(dest="orden")
-    actualiza = ordenes.add_parser("actualiza", help="descarga y pone al día las reglas YARA y las listas")
+    actualiza = ordenes.add_parser("actualiza", help="descarga y pone al día las reglas YARA, las listas, capa y Detect It Easy")
     actualiza.add_argument("--sin-circl", action="store_true", help="no descarga el filtro de CIRCL (1 GB)")
     for orden, ayuda in (("identifica", "huella, tipo y listas de un fichero"), ("estatico", "mira dentro de un ejecutable sin ejecutarlo")):
         sub = ordenes.add_parser(orden, help=ayuda)
@@ -138,7 +176,8 @@ def main():
             # ponytail: el fichero entero en memoria; los ejecutables suelen ocupar poco
             contenido = Path(args.fichero).read_bytes()
             datos = analizar_pe(contenido)
-            mostrar_estatico(datos, defender(args.fichero), yara(contenido), verificar_firma(args.fichero) if datos else None)
+            capa, die = herramientas.analizar(args.fichero, datos is not None)
+            mostrar_estatico(datos, defender(args.fichero), yara(contenido), verificar_firma(args.fichero) if datos else None, capa, die)
         return
 
     magika = Magika() if args.orden == "identifica" else None
@@ -150,8 +189,8 @@ def main():
             mostrar(identificar_datos(datos, nombre, magika))
         else:
             pe = analizar_pe(datos)
-            antivirus, firma = defender_datos(datos, nombre, verificar=pe is not None)
-            mostrar_estatico(pe, antivirus, yara(datos), firma)
+            antivirus, firma, capa, die = analizar_copia(datos, nombre, pe is not None)
+            mostrar_estatico(pe, antivirus, yara(datos), firma, capa, die)
 
 
 if __name__ == "__main__":

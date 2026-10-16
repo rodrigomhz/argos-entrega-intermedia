@@ -1,35 +1,50 @@
 import json
 import os
+import re
 import shutil
 import sys
 import time
 import urllib.request
+import zipfile
 from collections import namedtuple
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from http.client import HTTPException
+from pathlib import Path
 
-from argos import listas
+import capa.version
+
+from argos import herramientas, listas
 from argos.estatico import REGLAS, REGLAS_ZIP
 
 # La última versión publicada de YARA Forge (paquete "core"), por la API de GitHub y sin cuenta
 API_YARA_FORGE = "https://api.github.com/repos/YARAHQ/yara-forge/releases/latest"
+# Detect It Easy (horsicq, MIT), también de su repositorio oficial
+API_DIE = "https://api.github.com/repos/horsicq/DIE-engine/releases/latest"
+# El nombre del zip de Windows cambia con la versión: die_win64_portable_3.21_x64.zip
+ZIP_DIE = r"die_win64_portable_[\d.]+_x64\.zip"
+# capa (Mandiant, Apache-2.0) llega con Argos por pip (flare-capa), pero el paquete no trae sus reglas ni sus firmas FLIRT: se bajan de los repositorios
+# oficiales y SIEMPRE del tag de la librería instalada, porque unas reglas más nuevas pueden usar funciones que esta librería no entiende. {} = el tag, p. ej. v9.4.0
+URL_REGLAS_CAPA = "https://codeload.github.com/mandiant/capa-rules/zip/refs/tags/{}"
+API_FIRMAS_CAPA = "https://api.github.com/repos/mandiant/capa/contents/sigs?ref={}"
 URL_MALWAREBAZAAR = "https://bazaar.abuse.ch/export/txt/sha256/full/"
 URL_CIRCL = "https://cra.circl.lu/hashlookup/hashlookup-full.bloom"
 ESPERA = 30  # segundos sin recibir nada antes de rendirse (no es el tiempo total de la descarga)
-# ponytail: ESPERA_AVISO también es por operación, no total (3 peticiones: con un servidor lento podrían sumar más). Mejorar: un plazo total con un hilo
+# ponytail: ESPERA_AVISO también es por operación, no total (4 peticiones: con un servidor lento podrían sumar más). Mejorar: un plazo total con un hilo
 ESPERA_AVISO = 5  # lo mismo para el aviso de antes de analizar: no debe hacer esperar al análisis
 CADA = 24 * 3600  # segundos entre dos comprobaciones del aviso
 VERSION_REGLAS = REGLAS / "version.txt"
 ULTIMA_COMPROBACION = REGLAS.parent / "ultima-comprobacion"  # en argos-datos, junto a reglas y listas; solo importa su fecha
 
 # Un dato desactualizado o ausente: lo que hace falta para avisar (nombre, motivo, tamaño) y para descargarlo (url, destino)
-# version solo la llevan las reglas: es lo que se anota en VERSION_REGLAS al terminar
-Pendiente = namedtuple("Pendiente", "nombre motivo tamano url destino version", defaults=[None])
+# version solo la llevan las reglas y las herramientas: es lo que se anota al terminar
+# instalador: lo llevan las herramientas, que son una carpeta entera y la deja esa función (instalar, instalar_capa)
+# tamano None: la descarga no lo anuncia (el zip de reglas de capa viene de codeload, que lo manda por partes y sin Content-Length)
+Pendiente = namedtuple("Pendiente", "nombre motivo tamano url destino version instalador", defaults=[None, None])
 
 
 def mb(tamano):
-    return f"{tamano / 1e6:.1f} MB".replace(".", ",")
+    return "tamaño sin anunciar" if tamano is None else f"{tamano / 1e6:.1f} MB".replace(".", ",")
 
 
 def momento(segundos):
@@ -41,7 +56,7 @@ def abrir(url, metodo="GET", espera=ESPERA):
 
 
 def descargar(url, destino, esperado):
-    """Baja url a un fichero temporal junto a destino y solo lo renombra si llegó con los bytes anunciados."""
+    """Baja url a un fichero temporal junto a destino y solo lo renombra si llegó con los bytes anunciados (esperado None: no los anuncia y no se comprueban)."""
     destino.parent.mkdir(parents=True, exist_ok=True)
     temporal = destino.with_name(destino.name + ".parte")
     try:
@@ -49,19 +64,27 @@ def descargar(url, destino, esperado):
             # ponytail: sin barra de progreso; el filtro de CIRCL (1 GB) tarda minutos sin decir nada. Mejorar: copiar en bloques e ir imprimiendo los MB
             shutil.copyfileobj(r, f)
         recibidos = temporal.stat().st_size
-        if recibidos != esperado:  # si la conexión se corta, Python no avisa: el fichero solo queda más corto
+        if esperado is not None and recibidos != esperado:  # si la conexión se corta, Python no avisa: el fichero solo queda más corto
             raise OSError(f"la descarga llegó incompleta ({mb(recibidos)} de {mb(esperado)})")
         os.replace(temporal, destino)
     finally:
         temporal.unlink(missing_ok=True)  # tras el replace ya no existe; si algo falló, no deja el temporal
 
 
-def pendiente_reglas(espera):
-    """Pendiente con las reglas YARA si faltan o hay otra versión en GitHub; None si están al día."""
-    with abrir(API_YARA_FORGE, espera=espera) as r:
+def ultima_release(api, patron, espera):
+    """(versión, fichero) de la última release de un repositorio de GitHub; el fichero es el primero cuyo nombre encaja con patron."""
+    with abrir(api, espera=espera) as r:
         ultima = json.load(r)
     version = ultima["tag_name"]
-    paquete = next(a for a in ultima["assets"] if a["name"] == REGLAS_ZIP)
+    fichero = next((a for a in ultima["assets"] if re.fullmatch(patron, a["name"])), None)
+    if fichero is None:
+        raise OSError(f"la release {version} de {api} no trae ningún fichero que encaje con {patron}")
+    return version, fichero
+
+
+def pendiente_reglas(espera):
+    """Pendiente con las reglas YARA si faltan o hay otra versión en GitHub; None si están al día."""
+    version, paquete = ultima_release(API_YARA_FORGE, re.escape(REGLAS_ZIP), espera)
     destino = REGLAS / REGLAS_ZIP
     if not (destino.is_file() and VERSION_REGLAS.is_file()):
         motivo = "no hay copia"
@@ -70,6 +93,35 @@ def pendiente_reglas(espera):
     else:
         return None
     return Pendiente(f"reglas YARA {version}", motivo, paquete["size"], paquete["browser_download_url"], destino, version)
+
+
+def pendiente_herramienta(herramienta, nombre, api, patron, espera):
+    """Pendiente con una herramienta descargada (DIE) si falta o hay otra versión en GitHub; None si está al día."""
+    version, paquete = ultima_release(api, patron, espera)
+    carpeta = herramientas.CARPETA / herramienta
+    anotada = carpeta / "version.txt"  # la versión instalada: se escribe dentro de su carpeta al terminar de descomprimir
+    if herramientas.ruta(herramienta) is None or not anotada.is_file():
+        motivo = "no hay copia"
+    elif anotada.read_text() != version:
+        motivo = f"tu copia es la {anotada.read_text()}"
+    else:
+        return None
+    return Pendiente(f"{nombre} {version}", motivo, paquete["size"], paquete["browser_download_url"], carpeta, version, instalar)
+
+
+def pendiente_capa():
+    """Pendiente con las reglas y firmas de capa si faltan o no son de la versión de la librería instalada; None si están al día. No usa la red."""
+    # La versión sale de la librería y no de la API de GitHub: ahorra peticiones (el límite sin cuenta es de 60 por hora) y es la que tienen que casar
+    version = "v" + capa.version.__version__
+    carpeta = herramientas.CARPETA / "capa"
+    anotada = carpeta / "version.txt"  # la versión de las reglas y firmas instaladas: se escribe dentro de su carpeta al terminar
+    if herramientas.datos_capa() is None or not anotada.is_file():
+        motivo = "no hay copia"
+    elif anotada.read_text() != version:
+        motivo = f"tu copia es la {anotada.read_text()}"
+    else:
+        return None
+    return Pendiente(f"reglas y firmas de capa {version}", motivo, None, URL_REGLAS_CAPA.format(version), carpeta, version, instalar_capa)
 
 
 def pendiente_lista(nombre, fichero, url, espera):
@@ -98,7 +150,73 @@ def comprobar(sin_circl, espera=ESPERA):
     ]
     if not sin_circl:
         pendientes.append(pendiente_lista("CIRCL", listas.CIRCL, URL_CIRCL, espera))
+    # Las herramientas, al final: si una falla (p. ej. Defender bloquea la descarga), lo demás ya está al día
+    pendientes.append(pendiente_herramienta("die", "Detect It Easy", API_DIE, ZIP_DIE, espera))
+    pendientes.append(pendiente_capa())
     return [p for p in pendientes if p]
+
+
+def descomprimir(ruta_zip, carpeta):
+    """Descomprime un zip en carpeta; si alguna ruta de dentro se saliese de ella, no extrae nada."""
+    try:
+        z = zipfile.ZipFile(ruta_zip)
+    except zipfile.BadZipFile as error:  # no es un OSError, y sin esto «argos actualiza» acabaría con una traza
+        # Un zip cortado no tiene directorio central (está al final): es lo que da la integridad cuando la descarga no anuncia su tamaño
+        raise OSError(f"el zip descargado está cortado o corrupto: {error}") from error
+    except OSError as error:  # Windows Defender lo borra o lo bloquea al terminar de escribirlo si lo detecta como amenaza
+        raise OSError(f"no se pudo abrir el zip recién descargado (¿lo ha bloqueado Windows Defender? Argos no cambia sus ajustes): {error}") from error
+    with z:
+        base = carpeta.resolve()
+        for nombre in z.namelist():  # el nombre lo escribe quien hizo el zip: "../x" o "C:/x" escaparían de la carpeta
+            if not (base / nombre).resolve().is_relative_to(base):
+                raise OSError(f"el zip trae una ruta que se sale de su carpeta: {nombre}")
+        z.extractall(carpeta)
+
+
+def instalar(p):
+    """Baja el zip de una herramienta y lo descomprime en su carpeta; si algo falla, no deja la carpeta a medias."""
+    zip_descargado = p.destino.with_name(p.destino.name + ".zip")
+    nueva = p.destino.with_name(p.destino.name + ".parte")
+    try:
+        descargar(p.url, zip_descargado, p.tamano)
+        shutil.rmtree(nueva, ignore_errors=True)  # restos de un intento anterior
+        descomprimir(zip_descargado, nueva)
+        (nueva / "version.txt").write_text(p.version)
+        shutil.rmtree(p.destino, ignore_errors=True)  # la versión vieja
+        os.replace(nueva, p.destino)
+    finally:
+        zip_descargado.unlink(missing_ok=True)
+        shutil.rmtree(nueva, ignore_errors=True)  # tras el replace ya no existe; si algo falló, no deja el temporal
+
+
+def firmas_capa(version):
+    """[(nombre, bytes, url)] de las firmas FLIRT (.sig) que capa trae en su repositorio, al tag de la librería. Una petición a la API."""
+    with abrir(API_FIRMAS_CAPA.format(version)) as r:
+        contenido = json.load(r)
+    firmas = [(f["name"], f["size"], f["download_url"]) for f in contenido if f["name"].endswith(".sig")]  # la carpeta trae también un README
+    if not firmas:  # sin firmas capa sale con código 1
+        raise OSError(f"el repositorio de capa no trae firmas (.sig) en la versión {version}")
+    return firmas
+
+
+def instalar_capa(p):
+    """Baja el zip de reglas y las firmas de capa a una carpeta nueva y solo al final la cambia por la buena; si algo falla, no deja nada a medias."""
+    # Los nombres de esta instalación son los mismos que dejaba la vía antigua (capa.zip, capa.zip.parte, capa.parte, la carpeta capa con capa.exe):
+    # un resto suyo se pisa o se borra aquí, y nada fuera de herramientas\capa* se toca
+    zip_descargado = p.destino.with_name(p.destino.name + ".zip")
+    nueva = p.destino.with_name(p.destino.name + ".parte")
+    try:
+        shutil.rmtree(nueva, ignore_errors=True)  # restos de un intento anterior
+        descargar(p.url, zip_descargado, p.tamano)
+        descomprimir(zip_descargado, nueva / "reglas")  # trae una carpeta raíz (capa-rules-9.4.0/ con codeload; el zipball de la API la llama mandiant-capa-rules-<sha>/): capa busca los .yml por dentro
+        for nombre, tamano, url in firmas_capa(p.version):
+            descargar(url, nueva / "sigs" / Path(nombre).name, tamano)  # .name: el nombre viene de una API, que no escape de sigs
+        (nueva / "version.txt").write_text(p.version)
+        shutil.rmtree(p.destino, ignore_errors=True)  # la versión vieja
+        os.replace(nueva, p.destino)
+    finally:
+        zip_descargado.unlink(missing_ok=True)
+        shutil.rmtree(nueva, ignore_errors=True)  # tras el replace ya no existe; si algo falló, no deja el temporal
 
 
 def actualizar(sin_circl=False, pendientes=None):
@@ -109,9 +227,12 @@ def actualizar(sin_circl=False, pendientes=None):
         pendientes = comprobar(sin_circl)
     for p in pendientes:
         print(f"{p.nombre}: descargando {mb(p.tamano)} ({p.motivo})...")
-        descargar(p.url, p.destino, p.tamano)
-        if p.version:
-            VERSION_REGLAS.write_text(p.version)  # la última: si algo falla antes, la próxima vez vuelve a descargar
+        if p.instalador:
+            p.instalador(p)
+        else:
+            descargar(p.url, p.destino, p.tamano)
+            if p.version:
+                VERSION_REGLAS.write_text(p.version)  # la última: si algo falla antes, la próxima vez vuelve a descargar
         print(f"{p.nombre}: hecho")
     if not pendientes:
         print("Todo al día.")

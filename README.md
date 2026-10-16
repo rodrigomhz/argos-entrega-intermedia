@@ -43,7 +43,7 @@ muestra ──► identificación ──► huellas · tipo (Magika) · listas l
 
 ## Estado
 
-En desarrollo, por hitos. Hechos: entorno de desarrollo e identificación de ficheros. En curso: análisis estático (ya hay secciones, entropía, importaciones, firma, suplantación, Defender y reglas YARA; faltan capa, Detect It Easy y EMBER2024). Después: interfaz web, análisis dinámico, evaluación con muestras reales y empaquetado.
+En desarrollo, por hitos. Hechos: entorno de desarrollo e identificación de ficheros. En curso: análisis estático (ya hay secciones, entropía, importaciones, firma, suplantación, Defender, reglas YARA, capa y Detect It Easy; falta EMBER2024). Después: interfaz web, análisis dinámico, evaluación con muestras reales y empaquetado.
 
 ## Uso (lo que funciona hoy)
 
@@ -60,7 +60,7 @@ python -m venv %USERPROFILE%\venvs\argos
 %USERPROFILE%\venvs\argos\Scripts\argos actualiza
 ```
 
-Baja a `%USERPROFILE%\argos-datos\` las reglas YARA (paquete core de YARA Forge) y las listas de MalwareBazaar y CIRCL. Solo descarga lo que haya cambiado, así que puedes repetirlo cuando quieras. El filtro de CIRCL pesa 1 GB; `argos actualiza --sin-circl` se lo salta.
+Baja a `%USERPROFILE%\argos-datos\` las reglas YARA (paquete core de YARA Forge), las listas de MalwareBazaar y CIRCL y las dos herramientas externas, cada una de su repositorio oficial de GitHub y con su licencia: [capa](https://github.com/mandiant/capa) de Mandiant (Apache-2.0), que dice qué sabe hacer un ejecutable y con qué técnica de MITRE ATT&CK, y [Detect It Easy](https://github.com/horsicq/DIE-engine) (MIT), que dice compilador, lenguaje y empaquetador. capa se instala con Argos (es una dependencia de pip, `flare-capa`) y `argos actualiza` solo baja sus reglas y firmas, siempre de la misma versión que la librería instalada; Detect It Easy se baja entero. `argos estatico` las ejecuta por su cuenta (capa tarda de uno a dos minutos con un ejecutable como notepad.exe). Solo descarga lo que haya cambiado, así que puedes repetirlo cuando quieras. El filtro de CIRCL pesa 1 GB; `argos actualiza --sin-circl` se lo salta.
 
 **3. Usar**
 

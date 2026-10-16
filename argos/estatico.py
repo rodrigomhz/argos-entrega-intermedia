@@ -1,3 +1,4 @@
+import contextlib
 import functools
 import json
 import os
@@ -10,6 +11,8 @@ from pathlib import Path, PureWindowsPath
 
 import pefile
 import yara_x
+
+from argos import herramientas
 
 ARQUITECTURAS = {0x14C: "x86 (32 bits)", 0x8664: "x64 (64 bits)", 0xAA64: "ARM64"}
 # Por encima de esto, una sección parece comprimida o cifrada: indicio de empaquetado
@@ -252,15 +255,25 @@ def _amenaza_registrada(carpeta):
     ).stdout.strip()
 
 
-def defender_datos(datos, nombre, verificar=False):
-    """(veredicto de Defender, firma o None) de unos bytes que solo están en memoria.
+class SinCopia(Exception):
+    """No se escribió la muestra en el disco. defender: el veredicto de Defender que hay que mostrar; motivo: lo que dicen capa y DIE."""
 
-    Se escriben en una carpeta temporal que se borra siempre. Con verificar=True se comprueba también la firma de esa copia.
-    """
-    # ponytail: lee el ajuste y lanza MpCmdRun por cada fichero del zip; mejorar: leer el ajuste una vez y escanear la carpeta entera
+    def __init__(self, defender, motivo):
+        super().__init__(motivo)
+        self.defender = defender
+        self.motivo = motivo
+
+
+@contextlib.contextmanager
+def copia_temporal(datos, nombre):
+    """Da la ruta de una copia en disco de unos bytes, en una carpeta temporal que se borra siempre. SinCopia si no se debe o no se puede."""
     puerta = _puerta()  # antes de escribir: guardar el fichero en el disco es lo que haría que Windows lo enviase a Microsoft
     if puerta:
-        return puerta, None
+        if puerta["estado"] == "omitido":
+            motivo = "Argos no escribe la muestra en disco con el envío automático de muestras activado"
+        else:
+            motivo = "Argos no puede comprobar el envío automático de muestras de Windows y no escribe la muestra en disco"
+        raise SinCopia(puerta, motivo)
     with tempfile.TemporaryDirectory(prefix="argos-defender-") as carpeta:
         ruta = Path(carpeta) / _nombre_seguro(nombre)
         try:
@@ -270,8 +283,31 @@ def defender_datos(datos, nombre, verificar=False):
             # Defender lo ha borrado o bloqueado nada más escribirlo: eso ES una detección
             # ponytail: cualquier OSError se toma por una detección; también puede ser disco lleno o falta de permisos
             amenaza = _amenaza_registrada(Path(carpeta).name)
-            return {"estado": "DETECTADO", "detalle": amenaza or "nombre no disponible"}, None
-        return _escanear(ruta), (verificar_firma(ruta) if verificar else None)
+            raise SinCopia({"estado": "DETECTADO", "detalle": amenaza or "nombre no disponible"}, "Defender bloqueó la copia de la muestra")
+        yield ruta
+
+
+def defender_datos(datos, nombre, verificar=False):
+    """(veredicto de Defender, firma o None) de unos bytes que solo están en memoria.
+
+    Se escriben en una carpeta temporal que se borra siempre. Con verificar=True se comprueba también la firma de esa copia.
+    """
+    # ponytail: lee el ajuste y lanza MpCmdRun por cada fichero del zip; mejorar: leer el ajuste una vez y escanear la carpeta entera
+    try:
+        with copia_temporal(datos, nombre) as ruta:
+            return _escanear(ruta), (verificar_firma(ruta) if verificar else None)
+    except SinCopia as sin:
+        return sin.defender, None
+
+
+def analizar_copia(datos, nombre, es_pe):
+    """(veredicto de Defender, firma o None, capa, Detect It Easy) de unos bytes que solo están en memoria, sobre una sola copia en disco."""
+    try:
+        with copia_temporal(datos, nombre) as ruta:
+            return (_escanear(ruta), verificar_firma(ruta) if es_pe else None, *herramientas.analizar(ruta, es_pe))
+    except SinCopia as sin:
+        sin_copia = {"estado": "no aplicado", "detalle": sin.motivo}
+        return sin.defender, None, sin_copia, sin_copia
 
 
 REGLAS = Path.home() / "argos-datos" / "reglas"
