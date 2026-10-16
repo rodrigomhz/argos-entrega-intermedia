@@ -105,7 +105,7 @@ actualiza.comprobar = comprobar_ok
 
 # (e) --sin-red no comprueba; sin él, sí (el análisis se sustituye por uno falso: solo se prueba el cableado de main)
 principal.identificar = lambda fichero: {}
-principal.mostrar = lambda datos: None
+principal.mostrar = lambda datos, sin_red: None
 
 
 def lanzar(*opciones):

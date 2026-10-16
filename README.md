@@ -12,7 +12,14 @@ Argos analiza ficheros sospechosos íntegramente en tu equipo. **Por defecto, ni
 - **Informe**: árbol de procesos, conexiones de red y cambios en ficheros y registro, en una interfaz web local.
 - **Veredicto**: combina todas las evidencias con reglas explícitas; cada conclusión se puede seguir hasta la prueba que la produjo.
 
-**Modo conectado (opcional):** consulta VirusTotal, abuse.ch y CIRCL enviando solo huellas e indicadores de red, nunca el fichero. Su resultado se muestra aparte y no cambia el veredicto.
+**Modo conectado:** por defecto, `argos identifica` consulta [CIRCL hashlookup](https://hashlookup.circl.lu/), [MalwareBazaar](https://bazaar.abuse.ch/) (abuse.ch) y [VirusTotal](https://www.virustotal.com/) enviando SOLO la huella SHA-256 del fichero: una huella no publica la muestra, y el fichero y su contenido nunca se suben. Su resultado sale en su propia sección («En línea») y no cambia el veredicto ni nada más del informe; que un servicio conozca un fichero no quiere decir que sea seguro. `--sin-red` lo apaga (y apaga también el aviso de datos nuevos). CIRCL no pide clave; MalwareBazaar y VirusTotal piden una gratuita, que se guarda en una variable de entorno con `setx` y vale en una terminal nueva:
+
+```
+setx ARGOS_ABUSECH_KEY tu-clave     (clave gratuita en https://auth.abuse.ch/)
+setx ARGOS_VT_KEY tu-clave          (cuenta gratuita en VirusTotal: la clave está en tu perfil)
+```
+
+Sin la clave de un servicio, Argos no le pregunta nada y lo dice. La clave nunca se imprime. VirusTotal gratuito admite 4 consultas por minuto y 500 al día: con un zip grande, los últimos ficheros saldrán con «límite». Los dominios e IP que aparezcan en el análisis dinámico se consultarán igual cuando esa parte exista.
 
 ## Por qué en local
 
@@ -70,7 +77,7 @@ Baja a `%USERPROFILE%\argos-datos\` las reglas YARA (paquete core de YARA Forge)
 %USERPROFILE%\venvs\argos\Scripts\argos estatico muestra.zip --clave infected
 ```
 
-Antes de analizar, Argos comprueba (como mucho una vez cada 24 horas) si hay datos nuevos y, si los hay, te lo dice y te ofrece actualizarlos al momento; con `--sin-red` no comprueba nada por red.
+Antes de analizar, Argos comprueba (como mucho una vez cada 24 horas) si hay datos nuevos y, si los hay, te lo dice y te ofrece actualizarlos al momento; con `--sin-red` no comprueba nada por red, ni datos nuevos ni las huellas en CIRCL, MalwareBazaar y VirusTotal (ver «Modo conectado»).
 
 ## Requisitos
 

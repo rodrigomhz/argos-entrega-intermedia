@@ -53,8 +53,8 @@ def momento(segundos):
     return datetime.fromtimestamp(segundos).strftime("%Y-%m-%d %H:%M")
 
 
-def abrir(url, metodo="GET", espera=ESPERA):
-    return urllib.request.urlopen(urllib.request.Request(url, method=metodo), timeout=espera)
+def abrir(url, metodo="GET", espera=ESPERA, cabeceras=None, datos=None):
+    return urllib.request.urlopen(urllib.request.Request(url, data=datos, headers=cabeceras or {}, method=metodo), timeout=espera)
 
 
 def sha256(ruta):

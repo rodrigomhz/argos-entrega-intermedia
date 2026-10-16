@@ -7,7 +7,7 @@ import pyzipper
 
 from magika import Magika
 
-from argos import __version__, ember, herramientas, listas
+from argos import __version__, ember, enlinea, herramientas, listas
 from argos.actualiza import actualizar, avisar
 from argos.estatico import ENTROPIA_ALTA, analizar_copia, analizar_pe, defender, nombre_firmante, suplantacion, verificar_firma, yara
 from argos.identificacion import identificar, identificar_datos, miembros_zip
@@ -16,7 +16,7 @@ from argos.identificacion import identificar, identificar_datos, miembros_zip
 MOSTRAR_CAPACIDADES = 3  # cuántas capacidades de capa se enseñan; el resto solo se cuenta
 
 
-def mostrar(datos):
+def mostrar(datos, sin_red):
     print(f"SHA-256: {datos['sha256']}")
     print(f"SHA-1:   {datos['sha1']}")
     print(f"Tamaño:  {datos['bytes']:,} bytes".replace(",", "."))
@@ -43,6 +43,17 @@ def mostrar(datos):
         )
     print(f"Listas:  MalwareBazaar{malware}")
     print(f"         CIRCL{legitimo}")
+    mostrar_en_linea(datos["sha256"], sin_red)
+
+
+def mostrar_en_linea(sha256, sin_red):
+    """Lo que dicen los servicios por huella. Es información aparte: no cambia nada más del informe."""
+    if sin_red:
+        print("En línea: omitido (--sin-red)")
+        return
+    print("En línea (solo sale la huella, nunca el fichero):", flush=True)  # flush: si algún servicio tarda, que se vea que está trabajando
+    for servicio, resultado in enlinea.consultar(sha256).items():
+        print(f"         {servicio}: {resultado['detalle']}")
 
 
 def mostrar_defender(antivirus):
@@ -166,7 +177,8 @@ def main():
         sub = ordenes.add_parser(orden, help=ayuda)
         sub.add_argument("fichero")
         sub.add_argument("--clave", help="contraseña: abre el fichero como zip y analiza cada fichero de dentro, sin extraerlo")
-        sub.add_argument("--sin-red", action="store_true", help="no comprueba por red si hay datos nuevos")
+        sub.add_argument("--sin-red", action="store_true",
+                         help="no comprueba por red si hay datos nuevos ni, en identifica, consulta la huella en CIRCL, MalwareBazaar y VirusTotal")
     args = parser.parse_args()
     if args.orden is None:
         parser.print_help()
@@ -184,7 +196,7 @@ def main():
 
     if args.clave is None:
         if args.orden == "identifica":
-            mostrar(identificar(args.fichero))
+            mostrar(identificar(args.fichero), args.sin_red)
         else:
             # ponytail: el fichero entero en memoria; los ejecutables suelen ocupar poco
             contenido = Path(args.fichero).read_bytes()
@@ -200,7 +212,9 @@ def main():
             print()
         print(f"Dentro de {Path(args.fichero).name}: {nombre}")
         if args.orden == "identifica":
-            mostrar(identificar_datos(datos, nombre, magika))
+            # ponytail: una consulta en línea por miembro, y el VirusTotal gratuito admite 4 por minuto: con un zip grande los últimos saldrán «límite».
+            # Mejorar: esperar entre consultas o dejar de preguntar a VirusTotal al primer «límite»
+            mostrar(identificar_datos(datos, nombre, magika), args.sin_red)
         else:
             pe = analizar_pe(datos)
             antivirus, firma, capa, die = analizar_copia(datos, nombre, pe is not None)
