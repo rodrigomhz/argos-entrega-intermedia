@@ -245,9 +245,12 @@ def _nombre_seguro(nombre):
 def _amenaza_registrada(carpeta):
     """Nombre que Defender apuntó para un fichero de esta carpeta (Get-MpThreatDetection y Get-MpThreat, solo lectura); "" si no hay."""
     # Se busca por el nombre de la carpeta (único) y no por la ruta entera: TEMP puede venir en formato corto (JUAN~1) y Defender apunta la ruta larga
+    # Defender borra el fichero antes de apuntar la detección en su historial: preguntando una sola vez salía «nombre no disponible» con una
+    # muestra real (AZORult, 2026-10-19), aunque luego sí estaba apuntada. Por eso se reintenta hasta 10 veces, una por segundo, dentro de PowerShell
     orden = (
+        "for ($i = 0; $i -lt 10; $i++) { "
         "$d = Get-MpThreatDetection | Where-Object { $_.Resources -like ('*' + $env:ARGOS_CARPETA + '*') } | Select-Object -First 1; "
-        "if ($d) { (Get-MpThreat -ThreatID $d.ThreatID).ThreatName }"
+        "if ($d) { (Get-MpThreat -ThreatID $d.ThreatID).ThreatName; break }; Start-Sleep -Seconds 1 }"
     )
     return subprocess.run(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", orden],

@@ -50,7 +50,7 @@ muestra ──► identificación ──► huellas · tipo (Magika) · listas l
 
 ## Estado
 
-En desarrollo, por hitos. Hechos: entorno de desarrollo e identificación de ficheros. En curso: análisis estático, con todas sus partes hechas y a falta de probarlo con una muestra real (secciones, entropía, importaciones, firma, suplantación, Defender, reglas YARA, capa, Detect It Easy y EMBER2024, de momento solo con su puntuación: el umbral se calibra en el hito 7). Después: interfaz web, análisis dinámico, evaluación con muestras reales y empaquetado.
+En desarrollo, por hitos. Hechos: entorno de desarrollo, identificación de ficheros y análisis estático, probado con una muestra real de malware (secciones, entropía, importaciones, firma, suplantación, Defender, reglas YARA, capa, Detect It Easy y EMBER2024, de momento solo con su puntuación: el umbral se calibra en el hito 7). Después: interfaz web, análisis dinámico, evaluación con muestras reales y empaquetado.
 
 ## Uso (lo que funciona hoy)
 

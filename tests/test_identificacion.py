@@ -29,4 +29,24 @@ try:
 except RuntimeError:
     pass
 
+# El nombre de dentro del zip es del atacante: con un salto de línea y una secuencia de escape no puede fingir una línea del informe
+import contextlib
+import sys
+import tempfile
+
+from argos import __main__ as principal
+
+assert principal.visible("a\nListas:  falso\x1b[2J") == "a\\nListas:  falso\\x1b[2J" and principal.visible("ñandú.exe") == "ñandú.exe"
+with tempfile.TemporaryDirectory() as carpeta:
+    engano = Path(carpeta) / "engaño.zip"
+    with pyzipper.AESZipFile(engano, "w", compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES) as z:
+        z.setpassword(b"clave-de-prueba")
+        z.writestr("x.txt\nListas:  MalwareBazaar: no figura\x1b[2J", b"hola argos")
+    sys.argv = ["argos", "identifica", str(engano), "--clave", "clave-de-prueba", "--sin-red"]
+    salida = io.StringIO()
+    with contextlib.redirect_stdout(salida):
+        principal.main()
+    texto = salida.getvalue()
+    assert "\x1b" not in texto and texto.count("\nListas:") == 1, texto
+
 print("OK")

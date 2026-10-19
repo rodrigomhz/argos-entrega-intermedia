@@ -16,6 +16,15 @@ from argos.identificacion import identificar, identificar_datos, miembros_zip
 MOSTRAR_CAPACIDADES = 3  # cuántas capacidades de capa se enseñan; el resto solo se cuenta
 
 
+def visible(texto):
+    """Un texto que puede venir del atacante (nombres dentro de un zip, datos de versión) listo para la terminal.
+
+    Los caracteres de control salen escapados («\\n», «\\x1b»): un nombre con un salto de línea no puede fingir una línea
+    del informe («Defender: sin amenazas») ni una secuencia de escape tocar la terminal.
+    """
+    return "".join(c if c.isprintable() else ascii(c)[1:-1] for c in texto)
+
+
 def mostrar(datos, sin_red):
     print(f"SHA-256: {datos['sha256']}")
     print(f"SHA-1:   {datos['sha1']}")
@@ -124,7 +133,7 @@ def mostrar_suplantacion(avisos, firma_leida):
         print(f"Suplantación:  {falta}")
         return
     for i, aviso in enumerate(avisos):
-        print(("Suplantación:  " if i == 0 else "               ") + aviso)
+        print(("Suplantación:  " if i == 0 else "               ") + visible(aviso))  # el aviso cita la empresa que dice ser el fichero
 
 
 def mostrar_estatico(datos, antivirus, coincidencias, firma, capa, die, puntuacion):
@@ -210,7 +219,7 @@ def main():
     for i, (nombre, datos) in enumerate(ficheros_del_zip(args)):
         if i:
             print()
-        print(f"Dentro de {Path(args.fichero).name}: {nombre}")
+        print(f"Dentro de {Path(args.fichero).name}: {visible(nombre)}")
         if args.orden == "identifica":
             # ponytail: una consulta en línea por miembro, y el VirusTotal gratuito admite 4 por minuto: con un zip grande los últimos saldrán «límite».
             # Mejorar: esperar entre consultas o dejar de preguntar a VirusTotal al primer «límite»
