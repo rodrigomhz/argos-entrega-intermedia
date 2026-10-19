@@ -14,10 +14,19 @@ dependencies = [
     # thrember pide signify>=0.7.1 sin tope y con la 0.8+ no arranca (ImportError: cannot import name 'SignedPEFile' from
     # 'signify.authenticode'); la 0.7.x era la versión cuando se entrenó el modelo
     "signify>=0.7.1,<0.8",
+    # La ventana (hito 5): una página local en WebView2, el motor de Edge que ya trae Windows
+    "pywebview>=6.2,<7",
 ]
 
 [project.scripts]
 argos = "argos.__main__:main"
+
+# gui-scripts: el .exe se crea sin consola, así que argos-ventana.exe abre solo la ventana
+[project.gui-scripts]
+argos-ventana = "argos.ventana:main"
+
+[tool.setuptools.package-data]
+argos = ["ventana.html"]
 
 [tool.setuptools.dynamic]
 version = { attr = "argos.__version__" }

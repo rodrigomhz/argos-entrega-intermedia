@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<!-- Sin red ni nada externo: solo corre el script y se aplica el estilo que llevan el nonce de abajo (ventana.py pone uno nuevo en cada arranque), así que un script o un estilo
+     que se colara en el contenido de la página no se ejecutaría. connect-src, img-src, frame-src... caen en default-src 'none' -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-__NONCE__'; style-src 'nonce-__NONCE__'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Argos</title>
+<style nonce="__NONCE__">
+  :root {
+    color-scheme: light dark;
+    --fondo: #f5f6f8;
+    --zona: #ffffff;
+    --texto: #1b1f24;
+    --suave: #5a6572;
+    --borde: #8c97a5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fondo: #14171c;
+      --zona: #1b2027;
+      --texto: #e7eaee;
+      --suave: #9aa5b2;
+      --borde: #546071;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 24px;
+    background: var(--fondo);
+    color: var(--texto);
+    font-family: system-ui, sans-serif;
+  }
+  h1 { margin: 0 0 4px; font-size: 1.75rem; }
+  header p { margin: 0; color: var(--suave); }
+  #zona {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 3px dashed var(--borde);
+    border-radius: 12px;
+    background: var(--zona);
+    color: var(--suave);
+    font-size: 1.25rem;
+  }
+  footer { min-height: 1.2em; color: var(--suave); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Argos</h1>
+  <p>Analizador local de ficheros sospechosos: nada sale de tu equipo salvo las huellas</p>
+</header>
+<main id="zona">Arrastra aquí un fichero</main>
+<footer id="pie">Versión: …</footer>
+<script nonce="__NONCE__">
+  // Todo texto que cambie la página se pone con textContent (no interpreta HTML), nunca montando HTML: un nombre dentro de un zip o un dato de un servicio es del atacante
+  const pie = document.getElementById("pie");
+
+  // El puente (window.pywebview.api) no existe hasta que pywebview avisa con este evento
+  window.addEventListener("pywebviewready", async () => {
+    try {
+      pie.textContent = "Versión " + await window.pywebview.api.version();
+    } catch (error) {
+      pie.textContent = "Versión: no se pudo leer";
+    }
+  });
+</script>
+</body>
+</html>

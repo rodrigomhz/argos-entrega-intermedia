@@ -174,6 +174,7 @@ def main():
     args = parser.parse_args()
     if args.orden is None:
         parser.print_help()
+        print("\nPara abrir la ventana, sin terminal: argos-ventana (junto a argos, en la carpeta Scripts del entorno)")
         return
     if args.orden == "actualiza":
         try:
