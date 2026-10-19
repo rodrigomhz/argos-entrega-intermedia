@@ -62,15 +62,20 @@ def sha256(ruta):
         return hashlib.file_digest(f, "sha256").hexdigest()
 
 
-def descargar(url, destino, esperado, huella=None):
+def descargar(url, destino, esperado, huella=None, progreso=None):
     """Baja url a un fichero temporal junto a destino y solo lo renombra si llegó con los bytes anunciados (esperado None: no los anuncia y no se comprueban)
-    y, si se da huella, con esa SHA-256: lo que no coincide no llega a su sitio y la copia que hubiera antes sigue intacta."""
+    y, si se da huella, con esa SHA-256: lo que no coincide no llega a su sitio y la copia que hubiera antes sigue intacta.
+    progreso(recibidos, esperado), si se da, se llama cada MB: la ventana enseña la descarga sin esperar al final."""
     destino.parent.mkdir(parents=True, exist_ok=True)
     temporal = destino.with_name(destino.name + ".parte")
     try:
         with abrir(url) as r, temporal.open("wb") as f:
-            # ponytail: sin barra de progreso; el filtro de CIRCL (1 GB) tarda minutos sin decir nada. Mejorar: copiar en bloques e ir imprimiendo los MB
-            shutil.copyfileobj(r, f)
+            recibidos = 0
+            while bloque := r.read(1024 * 1024):
+                f.write(bloque)
+                recibidos += len(bloque)
+                if progreso:
+                    progreso(recibidos, esperado)
         recibidos = temporal.stat().st_size
         if esperado is not None and recibidos != esperado:  # si la conexión se corta, Python no avisa: el fichero solo queda más corto
             raise OSError(f"la descarga llegó incompleta ({mb(recibidos)} de {mb(esperado)})")
@@ -197,12 +202,12 @@ def descomprimir(ruta_zip, carpeta):
         z.extractall(carpeta)
 
 
-def instalar(p):
+def instalar(p, progreso=None):
     """Baja el zip de una herramienta y lo descomprime en su carpeta; si algo falla, no deja la carpeta a medias."""
     zip_descargado = p.destino.with_name(p.destino.name + ".zip")
     nueva = p.destino.with_name(p.destino.name + ".parte")
     try:
-        descargar(p.url, zip_descargado, p.tamano)
+        descargar(p.url, zip_descargado, p.tamano, progreso=progreso)
         shutil.rmtree(nueva, ignore_errors=True)  # restos de un intento anterior
         descomprimir(zip_descargado, nueva)
         (nueva / "version.txt").write_text(p.version)
@@ -223,7 +228,7 @@ def firmas_capa(version):
     return firmas
 
 
-def instalar_capa(p):
+def instalar_capa(p, progreso=None):
     """Baja el zip de reglas y las firmas de capa a una carpeta nueva y solo al final la cambia por la buena; si algo falla, no deja nada a medias."""
     # Los nombres de esta instalación son los mismos que dejaba la vía antigua (capa.zip, capa.zip.parte, capa.parte, la carpeta capa con capa.exe):
     # un resto suyo se pisa o se borra aquí, y nada fuera de herramientas\capa* se toca
@@ -231,7 +236,7 @@ def instalar_capa(p):
     nueva = p.destino.with_name(p.destino.name + ".parte")
     try:
         shutil.rmtree(nueva, ignore_errors=True)  # restos de un intento anterior
-        descargar(p.url, zip_descargado, p.tamano)
+        descargar(p.url, zip_descargado, p.tamano, progreso=progreso)
         descomprimir(zip_descargado, nueva / "reglas")  # trae una carpeta raíz (capa-rules-9.4.0/ con codeload; el zipball de la API la llama mandiant-capa-rules-<sha>/): capa busca los .yml por dentro
         for nombre, tamano, url in firmas_capa(p.version):
             descargar(url, nueva / "sigs" / Path(nombre).name, tamano)  # .name: el nombre viene de una API, que no escape de sigs
@@ -243,23 +248,47 @@ def instalar_capa(p):
         shutil.rmtree(nueva, ignore_errors=True)  # tras el replace ya no existe; si algo falló, no deja el temporal
 
 
-def actualizar(sin_circl=False, pendientes=None):
-    """Descarga lo pendiente; si el aviso ya lo comprobó, se lo pasa en pendientes y no se vuelve a comprobar."""
-    if sin_circl:
+def actualizar(sin_circl=False, pendientes=None, evento=None):
+    """Descarga lo pendiente; si el aviso ya lo comprobó, se lo pasa en pendientes y no se vuelve a comprobar.
+
+    Con evento(dict), la ventana recibe las fases (comprobando, descargando, progreso, hecho, al_dia) y aquí no se imprime nada;
+    sin evento, imprime igual que siempre la terminal.
+    """
+    if sin_circl and evento:
+        evento({"estado": "mensaje", "texto": "CIRCL: omitido (sin CIRCL)"})
+    elif sin_circl:
         print("CIRCL: omitido (--sin-circl)")
     if pendientes is None:
+        if evento:
+            evento({"estado": "comprobando"})
         pendientes = comprobar(sin_circl)
-    for p in pendientes:
-        print(f"{p.nombre}: descargando {mb(p.tamano)} ({p.motivo})...")
-        if p.instalador:
-            p.instalador(p)
+    if not pendientes:
+        if evento:
+            evento({"estado": "al_dia"})
         else:
-            descargar(p.url, p.destino, p.tamano, p.huella)
+            print("Todo al día.")
+        return
+    total = len(pendientes)
+    for indice, p in enumerate(pendientes):
+        if evento:
+            evento({"estado": "descargando", "nombre": p.nombre, "motivo": p.motivo, "tamano": p.tamano, "indice": indice, "total": total})
+        else:
+            print(f"{p.nombre}: descargando {mb(p.tamano)} ({p.motivo})...")
+
+        def progreso(recibidos, tamano, indice=indice, p=p):
+            if evento:
+                evento({"estado": "progreso", "nombre": p.nombre, "recibidos": recibidos, "tamano": tamano, "indice": indice, "total": total})
+
+        if p.instalador:
+            p.instalador(p, progreso)
+        else:
+            descargar(p.url, p.destino, p.tamano, p.huella, progreso)
             if p.version:
                 VERSION_REGLAS.write_text(p.version)  # la última: si algo falla antes, la próxima vez vuelve a descargar
-        print(f"{p.nombre}: hecho")
-    if not pendientes:
-        print("Todo al día.")
+        if evento:
+            evento({"estado": "hecho", "nombre": p.nombre, "indice": indice, "total": total})
+        else:
+            print(f"{p.nombre}: hecho")
 
 
 def avisar():

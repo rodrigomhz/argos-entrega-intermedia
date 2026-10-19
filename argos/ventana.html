@@ -112,8 +112,8 @@
   #campo-clave .ayuda { flex-basis: 100%; }
   .acciones { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; }
 
-  /* Progreso: bloques azules como los de Windows 95 */
-  #avance { display: flex; flex-direction: column; gap: 4px; }
+  /* Progreso del análisis y de la actualización: bloques azules como los de Windows 95 */
+  #avance, #actualizacion { display: flex; flex-direction: column; gap: 4px; }
   .barra { height: 20px; padding: 3px; background: var(--gris); box-shadow: var(--baja); }
   .relleno { height: 100%; width: 0; background: repeating-linear-gradient(90deg, var(--azul) 0 8px, transparent 8px 10px); }
   #actividad { overflow-wrap: anywhere; }
@@ -207,7 +207,8 @@
       <div class="soltar">
         <div class="caja-soltar hundido">Arrastra aquí un fichero</div>
         <!-- Los botones de esta fila se alinean solos: otro botón (type="button") cabe aquí sin tocar el estilo -->
-        <div class="botones" id="botones-zona"><button id="elegir" type="button" disabled>Elegir fichero</button></div>
+        <div class="botones" id="botones-zona"><button id="elegir" type="button" disabled>Elegir fichero</button><button id="actualizar" type="button" disabled>Actualizar</button></div>
+        <label class="casilla"><input id="sincircl" type="checkbox"><span>Sin CIRCL (1 GB)</span></label>
       </div>
       <div id="elegido" hidden>
         <p><strong id="nombre"></strong> <span id="tamano"></span></p>
@@ -223,6 +224,10 @@
       </div>
     </fieldset>
     <p id="aviso" hidden role="status"></p>
+    <div id="actualizacion" hidden>
+      <div class="barra" role="progressbar" aria-label="Progreso de la actualización"><div class="relleno" id="relleno-actualiza"></div></div>
+      <p id="actividad-actualiza"></p>
+    </div>
     <div id="avance" hidden>
       <div class="barra" role="progressbar" aria-label="Progreso del análisis"><div class="relleno" id="relleno"></div></div>
       <p id="actividad"></p>
@@ -243,6 +248,9 @@
   const $ = (id) => document.getElementById(id);
   const zona = $("zona"), pie = $("pie"), estadoBarra = $("resumen"), actividad = $("actividad"), relleno = $("relleno");
   const botonElegir = $("elegir"), botonAnalizar = $("analizar"), clave = $("clave"), sinRed = $("sinred");
+  const botonActualizar = $("actualizar"), sinCircl = $("sincircl");
+  const actualizacion = $("actualizacion"), rellenoActualiza = $("relleno-actualiza"), actividadActualiza = $("actividad-actualiza");
+  const CONTROLES = [botonElegir, botonAnalizar, botonActualizar, clave, sinRed, sinCircl];
   const pestanas = $("pestanas"), paneles = $("paneles");
   // El mismo valor que estatico.ENTROPIA_ALTA: una sección por encima parece comprimida o cifrada (test_ventana.py comprueba que coinciden)
   const ENTROPIA_ALTA = 7;
@@ -596,7 +604,7 @@
   }
 
   function ocupado(si) {
-    for (const control of [botonElegir, botonAnalizar, clave, sinRed]) control.disabled = si;
+    for (const control of CONTROLES) control.disabled = si;
     $("avance").hidden = !si;
     document.body.classList.toggle("ocupado", si);
     if (si) {
@@ -606,6 +614,58 @@
       temporizador = null;
       actividad.textContent = "";
     }
+  }
+
+  // --- Actualización de datos (reglas, listas, herramientas y modelo): barra propia, sin ventanas modales ---
+  let descargandoAlgo = false;
+
+  function ocupadoActualiza(si) {
+    for (const control of CONTROLES) control.disabled = si;
+    actualizacion.hidden = !si;
+    document.body.classList.toggle("ocupado", si);
+  }
+
+  function avanceActualiza(m) {
+    const total = m.total || 0;
+    const megas = (bytes) => `${(bytes / 1e6).toLocaleString("es-ES", { maximumFractionDigits: 1 })} MB`;
+    switch (m.estado) {
+      case "comprobando":
+        descargandoAlgo = false;
+        rellenoActualiza.style.width = "0%";
+        actividadActualiza.textContent = "Comprobando si hay datos nuevos…";
+        break;
+      case "mensaje":
+        actividadActualiza.textContent = limpiar(m.texto);
+        break;
+      case "descargando":
+        descargandoAlgo = true;
+        rellenoActualiza.style.width = `${total ? Math.round(100 * m.indice / total) : 0}%`;
+        actividadActualiza.textContent = limpiar(`${m.nombre}: descargando ${m.tamano === null ? "(tamaño sin anunciar)" : megas(m.tamano)} (${m.motivo})`);
+        break;
+      case "progreso": {
+        const dentro = m.tamano ? Math.min(1, m.recibidos / m.tamano) : 0;
+        rellenoActualiza.style.width = `${total ? Math.round(100 * (m.indice + dentro) / total) : 0}%`;
+        actividadActualiza.textContent = limpiar(`${m.nombre}: ${megas(m.recibidos)}${m.tamano ? ` de ${megas(m.tamano)}` : ""}`);
+        break;
+      }
+      case "hecho":
+        rellenoActualiza.style.width = `${total ? Math.round(100 * (m.indice + 1) / total) : 0}%`;
+        actividadActualiza.textContent = limpiar(`${m.nombre}: hecho`);
+        break;
+      case "al_dia":
+        actividadActualiza.textContent = "Todo al día.";
+        break;
+      case "fin":
+        ocupadoActualiza(false);
+        estadoBarra.textContent = descargandoAlgo ? "Actualización terminada" : "Todo al día";
+        break;
+      case "error":
+        ocupadoActualiza(false);
+        estadoBarra.textContent = "Actualización interrumpida";
+        mostrarAviso("error", m.texto);
+        break;
+    }
+    return null;
   }
 
   // Lo que Python manda a la página: ventana.py llama a argos.recibir(mensaje) con el mensaje serializado en JSON (un dict con "tipo")
@@ -637,6 +697,8 @@
         if (m.parte === "nombre") nombreDeFichero(m.indice, m.valor);
         else parteHecha(m.indice, m.parte, m.valor);
         break;
+      case "actualiza":
+        return avanceActualiza(m);
       case "terminado": {
         ocupado(false);
         if (!ficheros.some(Boolean)) paneles.replaceChildren(el("p", "vacio apagado", "No había ningún fichero que analizar."));
@@ -678,6 +740,16 @@
     }
   }
   botonElegir.addEventListener("click", () => llamar("elegir"));
+  botonActualizar.addEventListener("click", async () => {
+    ocupadoActualiza(true);  // se bloquea ya; si el puente lo rechaza, se revierte
+    estadoBarra.textContent = "Actualizando datos…";
+    const r = await llamar("actualizar", sinCircl.checked);
+    if (!r || !r.ok) {
+      ocupadoActualiza(false);
+      estadoBarra.textContent = "Listo";
+      mostrarAviso("rechazado", (r && r.motivo) || "No se pudo actualizar");
+    }
+  });
   botonAnalizar.addEventListener("click", async () => {
     const r = await llamar("analizar", clave.value, sinRed.checked);
     if (!r || !r.ok) mostrarAviso("rechazado", (r && r.motivo) || "No se pudo analizar");
@@ -687,6 +759,7 @@
   // El puente (window.pywebview.api) no existe hasta que pywebview avisa con este evento
   window.addEventListener("pywebviewready", async () => {
     botonElegir.disabled = false;
+    botonActualizar.disabled = false;
     try {
       pie.textContent = "Versión " + await window.pywebview.api.version();
     } catch (error) {

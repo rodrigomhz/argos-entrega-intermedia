@@ -9,13 +9,14 @@ import os
 import secrets
 import threading
 import urllib.parse
+from http.client import HTTPException
 from importlib.resources import files
 
 import pyzipper
 import webview
 from webview.dom import _dnd_state
 
-from argos import __version__, analisis
+from argos import __version__, actualiza, analisis
 
 registro = logging.getLogger("argos")
 LIMITE_CLAVE = 256  # caracteres de la contraseña de un zip; la página no es de fiar y no hay motivo para aceptar más
@@ -81,7 +82,7 @@ class Puente:
     def elegir(self):
         """Abre el diálogo nativo de Windows y fija el fichero que el usuario elija. No devuelve nada: la página se entera por el aviso «elegido»."""
         if self._ocupado:
-            return self._enviar({"tipo": "rechazado", "texto": "Hay un análisis en marcha: espera a que termine"})
+            return self._enviar({"tipo": "rechazado", "texto": "Hay una tarea en marcha: espera a que termine"})
         if not self._dialogo.acquire(blocking=False):
             return
         try:
@@ -103,13 +104,25 @@ class Puente:
             return rechazo("El interruptor «Sin red» no es válido")
         with self._cerrojo:
             if self._ocupado:
-                return rechazo("Ya hay un análisis en marcha")
+                return rechazo("Ya hay una tarea en marcha")
             if self._elegido is None:
                 return rechazo("No hay ningún fichero elegido")
             self._ocupado = True
             ruta = self._elegido
         # clave vacía = el zip se analiza como un fichero más. Daemon: si se cierra la ventana a medias (capa tarda minutos), el proceso termina sin esperarlo
         self._hilo = threading.Thread(target=self._trabajar, args=(ruta, clave or None, sin_red), daemon=True)
+        self._hilo.start()
+        return {"ok": True}
+
+    def actualizar(self, sin_circl=False):
+        """Comprueba y descarga los datos pendientes en un hilo aparte, avisando del progreso. Devuelve {"ok": True} o {"ok": False, "motivo": ...}."""
+        if not isinstance(sin_circl, bool):  # la casilla la manda la página: que sea exactamente un booleano
+            return rechazo("La casilla «Sin CIRCL» no es válida")
+        with self._cerrojo:
+            if self._ocupado:
+                return rechazo("Ya hay una tarea en marcha")
+            self._ocupado = True
+        self._hilo = threading.Thread(target=self._actualizar, args=(sin_circl,), daemon=True)
         self._hilo.start()
         return {"ok": True}
 
@@ -136,7 +149,7 @@ class Puente:
             return self._rechazar(f"No se puede leer el fichero: {error.strerror or 'error del sistema'}")
         with self._cerrojo:
             if self._ocupado:
-                return self._rechazar("Hay un análisis en marcha: espera a que termine")
+                return self._rechazar("Hay una tarea en marcha: espera a que termine")
             self._elegido = ruta
         self._enviar({"tipo": "elegido", "nombre": os.path.basename(ruta), "bytes": tamano, "es_zip": es_zip})
         return True
@@ -176,6 +189,24 @@ class Puente:
     def _avisar(self, indice, parte, valor):
         self._enviar({"tipo": "parte", "indice": indice, "parte": parte, "valor": valor})
 
+    def _actualizar(self, sin_circl):
+        """El hilo de la actualización: las fases de actualiza.actualizar se reenvían tal cual a la página."""
+        try:
+            actualiza.actualizar(sin_circl, evento=self._aviso_actualiza)
+            final = {"tipo": "actualiza", "estado": "fin"}
+        except (OSError, HTTPException) as error:  # sin red, descarga cortada, disco lleno...: el texto es para el usuario
+            final = {"tipo": "actualiza", "estado": "error", "texto": f"No se pudo actualizar: {error}"}
+        except Exception:  # respuesta rara de una API, un JSON que no es lo esperado: traza al registro y aviso genérico
+            registro.exception("falló la actualización de datos")
+            final = {"tipo": "actualiza", "estado": "error", "texto": "Error inesperado durante la actualización (la traza está en la salida de errores de Argos)"}
+        finally:
+            with self._cerrojo:  # antes de avisar del final, para que la página pueda volver a usar los controles en cuanto lo vea
+                self._ocupado = False
+        self._enviar(final)
+
+    def _aviso_actualiza(self, evento):
+        self._enviar({"tipo": "actualiza", **evento})
+
     def _registrar_soltar(self):
         """Engancha _soltar a la zona de la página. Hay que hacerlo con la página cargada, y de nuevo si se recarga."""
         self._ventana.dom.get_element("#zona").on("drop", self._soltar)
@@ -198,5 +229,5 @@ def main(func=None, **opciones):
     # expose() y no js_api=Puente(): con js_api pywebview solo oculta a la página los nombres con «_», pero cuando le llega un mensaje busca el nombre con getattr
     # sin filtrar (webview/util.py, js_bridge_call). Medido en 6.2.1: una página que manda el mensaje en bruto (chrome.webview.postMessage) llama a un método «_privado»
     # y hasta a «version.__globals__.update(...)», que le cambia las variables del módulo. Con expose() el nombre se busca exacto entre los expuestos y ahí acaba.
-    ventana.expose(puente.analizar, puente.elegir, puente.version)
+    ventana.expose(puente.actualizar, puente.analizar, puente.elegir, puente.version)
     webview.start(func, debug=False)

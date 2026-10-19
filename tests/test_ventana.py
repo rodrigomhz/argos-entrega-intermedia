@@ -21,7 +21,7 @@ import pyzipper
 import webview
 from webview.dom import _dnd_state
 
-from argos import __version__, analisis, estatico, ventana
+from argos import __version__, actualiza, analisis, estatico, ventana
 
 LIMITE = 180  # segundos para toda la prueba de humo: si WebView2 no arranca o se cuelga, se corta con un error en vez de quedarse esperando
 HOSTIL = "a\"b'c</script><script>window.__xss=1</script>\n\u2028x\\n&amp;<img src=x onerror=window.__xss=2>"  # un nombre de un zip puede traer cualquier cosa
@@ -177,7 +177,7 @@ logging.getLogger("argos").addHandler(errores)
 
 try:
     # 1. El puente: la versión, y de público solo lo que la página puede llamar (un método «_privado» o nuevo sin pensar sería una puerta más desde la página)
-    assert [nombre for nombre in dir(ventana.Puente) if not nombre.startswith("_")] == ["analizar", "elegir", "version"]
+    assert [nombre for nombre in dir(ventana.Puente) if not nombre.startswith("_")] == ["actualizar", "analizar", "elegir", "version"]
     assert ventana.Puente(VentanaFalsa()).version() == __version__
 
     # 2. La página: CSP cerrada y nada externo ni montado con HTML
@@ -283,6 +283,11 @@ try:
                                ("infected", "si"), ("infected", 1), ("infected", 0), ("infected", None), ("infected", [])):
             r = puente.analizar(clave, sin_red)
             assert r["ok"] is False and "elegido" not in r["motivo"] and puente._hilo is None and not puente._ocupado, (clave, sin_red, r)
+
+        # 3i2. Los argumentos de actualizar: la casilla «Sin CIRCL» tiene que ser un booleano
+        for valor in ("si", 1, None, [], {}):
+            r = puente.actualizar(valor)
+            assert r["ok"] is False and "Sin CIRCL" in r["motivo"] and puente._hilo is None and not puente._ocupado, (valor, r)
     assert w.mensajes() == []
 
     # 3j. analizar con un motor falso: cada parte llega con JSON válido, también con nombres y valores hostiles, y al final «terminado»
@@ -359,6 +364,8 @@ try:
         assert dentro.wait(10)
         segundo = puente.analizar("", True)
         assert segundo["ok"] is False and "en marcha" in segundo["motivo"], segundo
+        no_actualiza = puente.actualizar(False)  # tampoco se puede actualizar mientras analiza
+        assert no_actualiza["ok"] is False and "en marcha" in no_actualiza["motivo"], no_actualiza
         w.mensajes()
         w.dialogo = (otro,)
         dialogos = w.dialogos
@@ -400,6 +407,33 @@ try:
     ventana.Puente(w2)._enviar({"tipo": "aviso", "texto": "x"})
     assert len(errores.lineas) == 1 and "la página se rompió" in errores.lineas[0], errores.lineas
     errores.lineas.clear()
+
+    # 3p. La actualización: sus fases llegan a la página como eventos, ocupa el puente como un análisis y, al terminar, lo libera
+    w3 = VentanaFalsa()
+    p3 = ventana.Puente(w3)
+    dentro_act, seguir_act = threading.Event(), threading.Event()
+    vistos = []
+
+    def actualizar_lento(sin_circl=False, pendientes=None, evento=None):
+        vistos.append(sin_circl)
+        evento({"estado": "comprobando"})
+        evento({"estado": "descargando", "nombre": "CIRCL", "motivo": "no hay copia", "tamano": 1000, "indice": 0, "total": 1})
+        evento({"estado": "progreso", "nombre": "CIRCL", "recibidos": 500, "tamano": 1000, "indice": 0, "total": 1})
+        dentro_act.set()
+        assert seguir_act.wait(20)
+        evento({"estado": "hecho", "nombre": "CIRCL", "indice": 0, "total": 1})
+
+    with mock.patch.object(actualiza, "actualizar", actualizar_lento):
+        assert p3.actualizar(False) == {"ok": True}
+        assert dentro_act.wait(10)
+        assert p3.actualizar(True)["ok"] is False  # una sola tarea a la vez
+        no_analiza = p3.analizar("", True)
+        assert no_analiza["ok"] is False and "en marcha" in no_analiza["motivo"], no_analiza
+        seguir_act.set()
+        p3._hilo.join(10)
+        assert not p3._hilo.is_alive() and not p3._ocupado and p3._hilo.daemon
+    assert vistos == [False], vistos
+    assert [m.get("estado") for m in w3.mensajes()] == ["comprobando", "descargando", "progreso", "hecho", "fin"]
 
     # 4. Prueba de humo real: la ventana de verdad (oculta), con el puente y la CSP dentro de WebView2, y lo que intentaría una página hostil
     resultado = {}
@@ -506,10 +540,37 @@ try:
                 resultado[f"resumen_{nombre}"] = del_panel("p.querySelector('.resumen-fichero').textContent")
                 resultado[f"panel_{nombre}"] = del_panel("p.textContent")
                 resultado[f"ember_{nombre}"] = del_panel("p.querySelector('.pista-ember .relleno')?.style.width ?? null")
-            resultado["botones"] = w.evaluate_js("['elegir', 'analizar', 'clave', 'sinred'].map(id => document.getElementById(id).disabled)")
+            resultado["botones"] = w.evaluate_js("['elegir', 'actualizar', 'analizar', 'clave', 'sinred', 'sincircl'].map(id => document.getElementById(id).disabled)")
             resultado["progreso_oculto"] = w.evaluate_js("document.getElementById('avance').hidden")
             resultado["inyecciones"] = w.evaluate_js("[window.__xss, document.querySelectorAll('script').length, document.querySelectorAll('img').length]")
             resultado["motor"] = list(llamadas[-1])
+
+            # La actualización, con un actualizador falso que se queda a medias: barra, texto y controles bloqueados
+            act_dentro, act_seguir = threading.Event(), threading.Event()
+            act_recibido = []
+
+            def actualizar_lento(sin_circl=False, pendientes=None, evento=None):
+                act_recibido.append(sin_circl)
+                evento({"estado": "comprobando"})
+                evento({"estado": "descargando", "nombre": "CIRCL", "motivo": "no hay copia", "tamano": 2_000_000, "indice": 0, "total": 2})
+                evento({"estado": "progreso", "nombre": "CIRCL", "recibidos": 1_000_000, "tamano": 2_000_000, "indice": 0, "total": 2})
+                act_dentro.set()
+                assert act_seguir.wait(30)
+                evento({"estado": "hecho", "nombre": "CIRCL", "indice": 0, "total": 2})
+                evento({"estado": "hecho", "nombre": "reglas", "indice": 1, "total": 2})
+
+            with mock.patch.object(actualiza, "actualizar", actualizar_lento):
+                w.evaluate_js("document.getElementById('actualizar').click(); null")
+                assert act_dentro.wait(30)
+                resultado["act_visible"] = w.evaluate_js("!document.getElementById('actualizacion').hidden")
+                resultado["act_texto"] = texto_de("#actividad-actualiza")
+                resultado["act_barra"] = w.evaluate_js("document.getElementById('relleno-actualiza').style.width")
+                resultado["act_botones"] = w.evaluate_js("['elegir', 'actualizar', 'analizar', 'clave', 'sinred', 'sincircl'].map(id => document.getElementById(id).disabled)")
+                resultado["act_sincircl"] = list(act_recibido)
+                act_seguir.set()
+                esperar(w, "document.getElementById('actualizacion').hidden === true")
+            resultado["act_estado"] = texto_de("#resumen")
+            resultado["act_botones_fin"] = w.evaluate_js("['elegir', 'actualizar', 'analizar', 'clave', 'sinred', 'sincircl'].map(id => document.getElementById(id).disabled)")
 
             # Contraseña mala de un zip, con el motor de verdad: el aviso de error, sin ventana modal
             entregar(zip_mala)
@@ -520,7 +581,7 @@ try:
             esperar(w, "document.getElementById('aviso').hidden === false")
             resultado["error_texto"] = texto_de("#aviso")
             resultado["error_tipo"] = w.evaluate_js("document.getElementById('aviso').className")
-            resultado["botones_tras_error"] = w.evaluate_js("['elegir', 'analizar', 'clave', 'sinred'].map(id => document.getElementById(id).disabled)")
+            resultado["botones_tras_error"] = w.evaluate_js("['elegir', 'actualizar', 'analizar', 'clave', 'sinred', 'sincircl'].map(id => document.getElementById(id).disabled)")
             resultado["violaciones_nuevas"] = w.evaluate_js("window.__v")
 
             # Cerrar la ventana a medias de un análisis: el hilo se queda esperando al motor, y se suelta después de cerrar
@@ -571,7 +632,7 @@ try:
 
     assert "error" not in resultado, resultado["error"]
     assert resultado["pie"] == f"Versión {__version__}", resultado  # el puente contestó desde dentro de la CSP
-    assert resultado["api"] == ["analizar", "elegir", "version"], resultado  # lo único que la página ve del puente
+    assert resultado["api"] == ["actualizar", "analizar", "elegir", "version"], resultado  # lo único que la página ve del puente
     assert privado == [] and ventana.__version__ == __version__, (privado, ventana.__version__)  # la página no llegó a nada más que a lo expuesto
     assert resultado["falso_elegido"] is None and resultado["falso_visible"] is False, resultado  # el drop de mentira no fijó nada
     assert resultado["falso_aviso"] is False and "No se pudo leer la ruta" in resultado["falso_texto"], resultado  # el aviso va en la banda, no en un popup
@@ -592,11 +653,14 @@ try:
     assert resultado["ember_hostil"] == "50%" and HOSTIL in resultado["panel_hostil"], resultado  # el texto hostil se pinta como texto
     assert resultado["resumen_texto"].startswith("Señales de alarma: 1") and "Extensión que engaña" in resultado["resumen_texto"], resultado
     assert "no es un ejecutable de Windows" in resultado["panel_texto"] and resultado["ember_texto"] is None, resultado  # no-PE: ni EMBER ni estático
-    assert resultado["botones"] == [False] * 4 and resultado["progreso_oculto"] is True, resultado  # al terminar se vuelve a poder todo
+    assert resultado["botones"] == [False] * 6 and resultado["progreso_oculto"] is True, resultado  # al terminar se vuelve a poder todo
     assert resultado["inyecciones"] == [None, 1, 0], resultado  # ni el script ni la imagen del nombre hostil existen: solo el script de la página
     assert resultado["motor"] == [en_disco, None, True], resultado  # la ruta elegida por Python; sin clave (vacía) y con el interruptor de la página
+    assert resultado["act_visible"] is True and resultado["act_texto"] == "CIRCL: 1 MB de 2 MB" and resultado["act_barra"] == "25%", resultado
+    assert resultado["act_botones"] == [True] * 6 and resultado["act_sincircl"] == [False], resultado  # durante la actualización no se toca nada
+    assert resultado["act_estado"] == "Actualización terminada" and resultado["act_botones_fin"] == [False] * 6, resultado
     assert resultado["clave_visible_zip"] is True and resultado["error_texto"] == "contraseña incorrecta" and resultado["error_tipo"] == "error", resultado
-    assert resultado["botones_tras_error"] == [False] * 4, resultado
+    assert resultado["botones_tras_error"] == [False] * 6, resultado
     assert resultado["violaciones_nuevas"] == [], resultado  # nada de lo anterior rozó la CSP
     assert resultado["ejecutado"] is False and set(resultado["violaciones"]) == {"script-src-elem", "connect-src"}, resultado
     assert resultado["elegido_tras_hostil"] == notepad, resultado  # las llamadas en bruto a _soltar y _fijar no cambiaron nada

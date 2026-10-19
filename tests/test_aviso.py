@@ -42,6 +42,7 @@ def actualizar_falso(sin_circl=False, pendientes=None):
 
 
 actualiza.comprobar = comprobar_ok
+actualizar_real = actualiza.actualizar  # se guarda antes de sustituirla para la prueba de los eventos
 actualiza.actualizar = actualizar_falso
 
 
@@ -118,6 +119,35 @@ ejecutar(False, "", lambda: lanzar("--sin-red"))
 assert llamadas == []
 ejecutar(False, "", lambda: lanzar())
 assert llamadas == ["comprobar"]
+
+# (f) descargar() avisa del avance por bloques y solo deja el fichero bueno en su sitio (file://, sin red)
+tmp_aviso = Path(tempfile.mkdtemp(prefix="argos-test-aviso-"))
+origen, destino = tmp_aviso / "origen.bin", tmp_aviso / "destino.bin"
+origen.write_bytes(b"x" * (2 * 1024 * 1024 + 7))
+visto = []
+actualiza.descargar(origen.as_uri(), destino, origen.stat().st_size, progreso=lambda recibidos, total: visto.append((recibidos, total)))
+assert destino.read_bytes() == origen.read_bytes()
+assert len(visto) >= 2 and visto[-1] == (origen.stat().st_size, origen.stat().st_size), visto
+assert [r for r, _ in visto] == sorted(r for r, _ in visto), visto
+
+# (g) actualizar() con evento: las fases que pinta la ventana (descargando, progreso, hecho), sin red ni datos reales
+descargar_real = actualiza.descargar
+descargados = []
+
+
+def descargar_falso(url, destino, esperado, huella=None, progreso=None):
+    descargados.append((url, esperado))
+    if progreso:
+        progreso(esperado, esperado)
+
+
+actualiza.descargar = descargar_falso
+eventos = []
+actualizar_real(pendientes=[Pendiente("dato", "no hay copia", 10, "url", tmp_aviso / "dato")], evento=eventos.append)
+actualiza.descargar = descargar_real
+assert descargados == [("url", 10)], descargados
+assert [e["estado"] for e in eventos] == ["descargando", "progreso", "hecho"], eventos
+assert eventos[0]["indice"] == 0 and eventos[0]["total"] == 1 and eventos[1]["recibidos"] == 10 and eventos[2]["nombre"] == "dato", eventos
 
 ultima.unlink(missing_ok=True)
 print("OK")
