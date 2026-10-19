@@ -11,7 +11,7 @@ import warnings
 from pathlib import Path
 
 from argos import __main__ as principal
-from argos import actualiza, ember
+from argos import actualiza, analisis, ember
 from argos.actualiza import Pendiente
 
 notepad = r"C:\Windows\System32\notepad.exe"
@@ -101,7 +101,7 @@ def no_debe_puntuar(datos):
 
 
 ember.puntuar = no_debe_puntuar
-assert principal.puntuar_ember(b"hola", False) == {"estado": "no aplica", "detalle": "solo ejecutables de Windows (PE)"}
+assert analisis.puntuar_ember(b"hola", False) == {"estado": "no aplica", "detalle": "solo ejecutables de Windows (PE)"}
 ember.puntuar = puntuar_real
 
 # 4. La línea del informe: puntuación con coma decimal y dos decimales, y cada estado en el estilo de capa y Detect It Easy
@@ -119,7 +119,7 @@ assert linea({"estado": "ok", "puntuacion": 0.0289}) == "EMBER2024:     0,03 (0 
 assert linea({"estado": "ok", "puntuacion": 0.5}).startswith("EMBER2024:     0,50 (") and linea({"estado": "ok", "puntuacion": 1.0}).startswith("EMBER2024:     1,00 (")
 assert linea({"estado": "no disponible", "detalle": "falta x"}) == "EMBER2024:     no disponible (ejecuta «argos actualiza»)"
 assert linea({"estado": "error", "detalle": "IndexError: x"}) == "EMBER2024:     error: IndexError: x"
-assert linea(principal.puntuar_ember(b"hola", False)) == "EMBER2024:     no aplica: solo ejecutables de Windows (PE)"
+assert linea(analisis.puntuar_ember(b"hola", False)) == "EMBER2024:     no aplica: solo ejecutables de Windows (PE)"
 
 # 4b. Lo que thrember y LightGBM dicen por su cuenta (print por stdout, warnings) no sale, y al terminar todo vuelve a su sitio
 salida = io.StringIO()

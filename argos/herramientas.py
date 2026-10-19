@@ -111,7 +111,16 @@ def die(fichero):
     return _correr("die", None if exe is None else [str(exe), "-j", str(fichero)], _resumen_die)
 
 
-def analizar(fichero, es_pe):
-    """(capa, Detect It Easy) de un fichero que está en el disco. capa solo sirve con ejecutables de Windows (PE)."""
+def analizar(fichero, es_pe, listo=None):
+    """(capa, Detect It Easy) de un fichero que está en el disco. capa solo sirve con ejecutables de Windows (PE).
+
+    listo(parte, resultado), si se da, se llama con cada una en cuanto termina: DIE va primero porque tarda segundos y capa, minutos.
+    """
     sin_capa = {"estado": "no aplica", "detalle": "capa solo analiza ejecutables de Windows (PE)"}
-    return (capa(fichero) if es_pe else sin_capa), die(fichero)
+    resultado_die = die(fichero)
+    if listo:
+        listo("die", resultado_die)
+    resultado_capa = capa(fichero) if es_pe else sin_capa
+    if listo:
+        listo("capa", resultado_capa)
+    return resultado_capa, resultado_die

@@ -8,7 +8,7 @@ import urllib.error
 from pathlib import Path
 
 from argos import __main__ as principal
-from argos import actualiza
+from argos import actualiza, analisis
 from argos.actualiza import Pendiente
 
 
@@ -104,8 +104,8 @@ for error in (urllib.error.URLError("sin red"), KeyError("tag_name")):
 actualiza.comprobar = comprobar_ok
 
 # (e) --sin-red no comprueba; sin él, sí (el análisis se sustituye por uno falso: solo se prueba el cableado de main)
-principal.identificar = lambda fichero: {}
-principal.mostrar = lambda datos, sin_red: None
+analisis.analizar = lambda *args, **kwargs: [{}]
+principal.mostrar = lambda informe: None
 
 
 def lanzar(*opciones):

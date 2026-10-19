@@ -15,7 +15,7 @@ from pathlib import Path
 import pyzipper
 
 from argos import __main__ as principal
-from argos import __version__, actualiza, enlinea
+from argos import __version__, actualiza, analisis, enlinea, identificacion
 
 CLAVE_MB, CLAVE_VT = "clave-secreta-mb-1234", "clave-secreta-vt-5678"
 HUELLA = "ab" * 32
@@ -228,9 +228,9 @@ with pyzipper.AESZipFile(tmp / "m.zip", "w", encryption=pyzipper.WZ_AES) as z:
     z.writestr("uno.txt", b"1")
     z.writestr("dos.txt", b"2")
 principal.avisar = lambda: None  # el aviso de datos nuevos es otro asunto (test_aviso)
-principal.identificar = lambda ruta: ficha("suelto")
-principal.identificar_datos = lambda datos, nombre, magika: ficha(nombre)
-principal.Magika = lambda: None  # no hace falta el modelo de Magika: la ficha es falsa
+identificacion.identificar = lambda ruta: ficha("suelto")
+identificacion.identificar_datos = lambda datos, nombre, magika: ficha(nombre)
+analisis.Magika = lambda: None  # no hace falta el modelo de Magika: la ficha es falsa
 
 
 def lanzar(*opciones):

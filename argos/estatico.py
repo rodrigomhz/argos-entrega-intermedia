@@ -231,9 +231,9 @@ def _escanear(ruta):
     return {"estado": "error", "detalle": f"MpCmdRun devolvió el código {r.returncode}: {ultima_linea}"}
 
 
-def defender(ruta):
-    """Veredicto de Microsoft Defender, en local, para un fichero que está en el disco."""
-    return _puerta() or _escanear(ruta)
+def defender(ruta, puerta=True):
+    """Veredicto de Microsoft Defender, en local, para un fichero que está en el disco. puerta=False: ya se pasó (copia_temporal la pasa antes de escribir)."""
+    return (_puerta() if puerta else None) or _escanear(ruta)
 
 
 def _nombre_seguro(nombre):
@@ -265,6 +265,7 @@ class SinCopia(Exception):
         super().__init__(motivo)
         self.defender = defender
         self.motivo = motivo
+        self.no_aplicado = {"estado": "no aplicado", "detalle": motivo}  # lo que dicen capa y DIE en lugar de su resultado
 
 
 @contextlib.contextmanager
@@ -309,8 +310,7 @@ def analizar_copia(datos, nombre, es_pe):
         with copia_temporal(datos, nombre) as ruta:
             return (_escanear(ruta), verificar_firma(ruta) if es_pe else None, *herramientas.analizar(ruta, es_pe))
     except SinCopia as sin:
-        sin_copia = {"estado": "no aplicado", "detalle": sin.motivo}
-        return sin.defender, None, sin_copia, sin_copia
+        return sin.defender, None, sin.no_aplicado, sin.no_aplicado
 
 
 REGLAS = Path.home() / "argos-datos" / "reglas"

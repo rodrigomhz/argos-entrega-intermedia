@@ -3,14 +3,9 @@ import sys
 from http.client import HTTPException
 from pathlib import Path
 
-import pyzipper
-
-from magika import Magika
-
-from argos import __version__, ember, enlinea, herramientas, listas
+from argos import __version__, analisis, listas
 from argos.actualiza import actualizar, avisar
-from argos.estatico import ENTROPIA_ALTA, analizar_copia, analizar_pe, defender, nombre_firmante, suplantacion, verificar_firma, yara
-from argos.identificacion import identificar, identificar_datos, miembros_zip
+from argos.estatico import ENTROPIA_ALTA, nombre_firmante
 
 
 MOSTRAR_CAPACIDADES = 3  # cuántas capacidades de capa se enseñan; el resto solo se cuenta
@@ -25,7 +20,8 @@ def visible(texto):
     return "".join(c if c.isprintable() else ascii(c)[1:-1] for c in texto)
 
 
-def mostrar(datos, sin_red):
+def mostrar(informe):
+    datos = informe["identificacion"]
     print(f"SHA-256: {datos['sha256']}")
     print(f"SHA-1:   {datos['sha1']}")
     print(f"Tamaño:  {datos['bytes']:,} bytes".replace(",", "."))
@@ -52,16 +48,16 @@ def mostrar(datos, sin_red):
         )
     print(f"Listas:  MalwareBazaar{malware}")
     print(f"         CIRCL{legitimo}")
-    mostrar_en_linea(datos["sha256"], sin_red)
+    mostrar_en_linea(informe["en_linea"])
 
 
-def mostrar_en_linea(sha256, sin_red):
-    """Lo que dicen los servicios por huella. Es información aparte: no cambia nada más del informe."""
-    if sin_red:
+def mostrar_en_linea(consultas):
+    """Lo que dicen los servicios por huella (None: no se consultó, --sin-red). Es información aparte: no cambia nada más del informe."""
+    if consultas is None:
         print("En línea: omitido (--sin-red)")
         return
-    print("En línea (solo sale la huella, nunca el fichero):", flush=True)  # flush: si algún servicio tarda, que se vea que está trabajando
-    for servicio, resultado in enlinea.consultar(sha256).items():
+    print("En línea (solo sale la huella, nunca el fichero):")
+    for servicio, resultado in consultas.items():
         print(f"         {servicio}: {resultado['detalle']}")
 
 
@@ -116,11 +112,6 @@ def texto_ember(resultado):
     return f"{puntuacion} (0 = parece legítimo, 1 = parece malware; umbral sin calibrar hasta el hito 7)"
 
 
-def puntuar_ember(datos, es_pe):
-    """Como herramientas.analizar: solo los ejecutables de Windows (PE) se puntúan. Trabaja con los bytes en memoria, sirve para un zip."""
-    return ember.puntuar(datos) if es_pe else {"estado": "no aplica", "detalle": "solo ejecutables de Windows (PE)"}
-
-
 def mostrar_herramientas(capa, die, puntuacion):
     mostrar_herramienta("Capacidades:   ", capa, texto_capa)
     mostrar_herramienta("Detect It Easy: ", die, texto_die)
@@ -136,12 +127,14 @@ def mostrar_suplantacion(avisos, firma_leida):
         print(("Suplantación:  " if i == 0 else "               ") + visible(aviso))  # el aviso cita la empresa que dice ser el fichero
 
 
-def mostrar_estatico(datos, antivirus, coincidencias, firma, capa, die, puntuacion):
+def mostrar_estatico(informe):
+    e = informe["estatico"]
+    datos, firma = e["pe"], e["firma"]
     if datos is None:
         print("No es un ejecutable de Windows (PE): no hay análisis estático de ejecutable.")
-        mostrar_defender(antivirus)
-        mostrar_yara(coincidencias)
-        mostrar_herramientas(capa, die, puntuacion)
+        mostrar_defender(e["defender"])
+        mostrar_yara(e["yara"])
+        mostrar_herramientas(e["capa"], e["die"], e["ember"])
         return
     print(f"Arquitectura:  {datos['arquitectura']}")
     print(f"Compilado:     {datos['compilado']} (lo escribe el compilador: puede ser falso)")
@@ -152,10 +145,10 @@ def mostrar_estatico(datos, antivirus, coincidencias, firma, capa, die, puntuaci
         firmante = nombre_firmante(firma)  # "CN=Microsoft Windows, O=..." → "Microsoft Windows"
         detalles = ", ".join(x for x in (firma["tipo"], firmante and f"firmante: {firmante}") if x)
         print(f"Firma:         {firma['estado']}" + (f" ({detalles})" if detalles else ""))
-    mostrar_suplantacion(suplantacion(datos, firma), firma is not None)
-    mostrar_defender(antivirus)
-    mostrar_yara(coincidencias)
-    mostrar_herramientas(capa, die, puntuacion)
+    mostrar_suplantacion(e["suplantacion"], firma is not None)
+    mostrar_defender(e["defender"])
+    mostrar_yara(e["yara"])
+    mostrar_herramientas(e["capa"], e["die"], e["ember"])
     print("Secciones:")
     for s in datos["secciones"]:
         alta = "  ← ENTROPÍA ALTA" if s["entropia"] > ENTROPIA_ALTA else ""
@@ -164,16 +157,6 @@ def mostrar_estatico(datos, antivirus, coincidencias, firma, capa, die, puntuaci
     print(f"Importaciones: {total} funciones de {len(datos['importaciones'])} DLL")
     for dll, funciones in datos["importaciones"].items():
         print(f"  {dll} ({len(funciones)}): {', '.join(funciones[:5])}{', …' if len(funciones) > 5 else ''}")
-
-
-def ficheros_del_zip(args):
-    """(nombre, bytes) de cada fichero del zip; si la contraseña o el zip fallan, sale con un mensaje."""
-    try:
-        return list(miembros_zip(args.fichero, args.clave))
-    except RuntimeError:  # pyzipper lo lanza con la contraseña mala o vacía
-        sys.exit("error: contraseña incorrecta")
-    except pyzipper.BadZipFile:  # ojo: no es zipfile.BadZipFile, pyzipper lleva su propia copia
-        sys.exit("error: el fichero no es un zip válido o está roto")
 
 
 def main():
@@ -203,31 +186,17 @@ def main():
     if not args.sin_red:
         avisar()
 
-    if args.clave is None:
-        if args.orden == "identifica":
-            mostrar(identificar(args.fichero), args.sin_red)
-        else:
-            # ponytail: el fichero entero en memoria; los ejecutables suelen ocupar poco
-            contenido = Path(args.fichero).read_bytes()
-            datos = analizar_pe(contenido)
-            capa, die = herramientas.analizar(args.fichero, datos is not None)
-            mostrar_estatico(datos, defender(args.fichero), yara(contenido), verificar_firma(args.fichero) if datos else None, capa, die,
-                             puntuar_ember(contenido, datos is not None))
-        return
-
-    magika = Magika() if args.orden == "identifica" else None
-    for i, (nombre, datos) in enumerate(ficheros_del_zip(args)):
-        if i:
-            print()
-        print(f"Dentro de {Path(args.fichero).name}: {visible(nombre)}")
-        if args.orden == "identifica":
-            # ponytail: una consulta en línea por miembro, y el VirusTotal gratuito admite 4 por minuto: con un zip grande los últimos saldrán «límite».
-            # Mejorar: esperar entre consultas o dejar de preguntar a VirusTotal al primer «límite»
-            mostrar(identificar_datos(datos, nombre, magika), args.sin_red)
-        else:
-            pe = analizar_pe(datos)
-            antivirus, firma, capa, die = analizar_copia(datos, nombre, pe is not None)
-            mostrar_estatico(pe, antivirus, yara(datos), firma, capa, die, puntuar_ember(datos, pe is not None))
+    seccion, mostrar_seccion = ("identificacion", mostrar) if args.orden == "identifica" else ("estatico", mostrar_estatico)
+    try:
+        # Uno a uno: cada fichero de un zip se imprime en cuanto está, sin esperar a los demás (capa tarda minutos por ejecutable)
+        for i, informe in enumerate(analisis.informes(args.fichero, args.clave, args.sin_red, secciones=(seccion,))):
+            if args.clave is not None:  # un fichero suelto no lleva cabecera; uno de un zip, sí
+                if i:
+                    print()
+                print(f"Dentro de {Path(args.fichero).name}: {visible(informe['nombre'])}")
+            mostrar_seccion(informe)
+    except analisis.ErrorAnalisis as error:  # contraseña mala o zip roto: salta antes del primer fichero, con nada impreso
+        sys.exit(f"error: {error}")
 
 
 if __name__ == "__main__":
