@@ -190,7 +190,8 @@ def pagina():
 def main(func=None, **opciones):
     """Abre la ventana y no vuelve hasta que se cierra. func y opciones (hidden=True...) son solo para la prueba de humo."""
     # text_select=True: si no, pywebview mete un <style> sin nonce para impedir seleccionar texto y la CSP lo bloquea; además hay que poder copiar una huella
-    ventana = webview.create_window("Argos", html=pagina(), width=900, height=640, min_size=(560, 420), text_select=True, **opciones)
+    # background_color: el verde azulado del escritorio de la página, para que al abrir (o al cambiar de tamaño) no se vea un destello blanco antes de pintarla
+    ventana = webview.create_window("Argos", html=pagina(), width=900, height=640, min_size=(560, 420), text_select=True, background_color="#008080", **opciones)
     puente = Puente(ventana)
     vigilar_soltados()
     ventana.events.loaded += puente._registrar_soltar

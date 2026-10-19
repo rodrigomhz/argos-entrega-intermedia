@@ -21,13 +21,91 @@ import pyzipper
 import webview
 from webview.dom import _dnd_state
 
-from argos import __version__, analisis, ventana
+from argos import __version__, analisis, estatico, ventana
 
-LIMITE = 120  # segundos para toda la prueba de humo: si WebView2 no arranca o se cuelga, se corta con un error en vez de quedarse esperando
+LIMITE = 180  # segundos para toda la prueba de humo: si WebView2 no arranca o se cuelga, se corta con un error en vez de quedarse esperando
 HOSTIL = "a\"b'c</script><script>window.__xss=1</script>\n\u2028x\\n&amp;<img src=x onerror=window.__xss=2>"  # un nombre de un zip puede traer cualquier cosa
 EN_DISCO = "o'neil\u2028&amp;{{x}} $(calc) `x`.txt"  # lo más hostil que Windows deja en el nombre de un fichero (sin <>:"/\|?* ni controles)
+HOSTIL_RICO = HOSTIL + " \U0001F600"  # con un emoji, para los informes completos
 PARTES = list(ventana.PARTES)
 tmp = Path(tempfile.mkdtemp(prefix="argos-test-ventana-"))
+
+
+def _identificacion(sha256, sha1, tamano, malware):
+    return {"sha256": sha256, "sha1": sha1, "bytes": tamano, "tipo": "PE Windows executable (executable)", "extension_engana": False,
+            "extensiones_esperadas": ["exe", "dll"], "malwarebazaar": [malware, "2026-10-16"], "circl": [False, "2026-10-06"]}
+
+
+def notepad_falso():
+    """Un informe con la forma real de analisis.analizar (sin_red=True) y los datos de notepad.exe: ninguna señal de alarma."""
+    return {
+        "nombre": "notepad.exe",
+        "identificacion": _identificacion("468ffe129c395abf6b21a09efdf261910a95fb98aa982ead73caa7b2b684577e", "76cd26b59923157e09d2bc927ba8fb059f3155dc", 360448, False),
+        "en_linea": None,
+        "pe": {"arquitectura": "x64 (64 bits)", "compilado": "1979-02-19", "firma_incrustada": False, "version": {"empresa": "Microsoft Corporation", "nombre_original": "NOTEPAD.EXE"},
+               "zona_firma": None,
+               "secciones": [{"nombre": ".text", "bytes": 159744, "entropia": 6.24}, {"nombre": ".rsrc", "bytes": 126976, "entropia": 7.12}],
+               "importaciones": {"GDI32.dll": ["SetMapMode", "LPtoDP"], "COMCTL32.dll": ["ordinal 381"]}},
+        "firma": {"estado": "válida", "tipo": "en un catálogo de Windows", "firmante": "CN=Microsoft Windows, O=Microsoft Corporation, C=US"},
+        "suplantacion": [],
+        "defender": {"estado": "sin amenazas", "detalle": ""},
+        "yara": [],
+        "ember": {"estado": "ok", "puntuacion": 0.03},
+        "die": {"estado": "ok", "detectado": {"compilador": ["Microsoft Visual C/C++ 19.38.33145 [LTCG/C]"], "lenguaje": [], "empaquetador": []}},
+        "capa": {"estado": "ok", "capacidades": [["accept command line arguments", "T1059 Command and Scripting Interpreter"]] + [[f"capacidad {i}", ""] for i in range(29)]},
+    }
+
+
+def azorult_falso():
+    """Lo que sale de azorult.zip con sin_red=True (medido): MalwareBazaar y Defender dicen malware; ni YARA ni suplantación; capa y DIE sin aplicar."""
+    return {
+        "nombre": "7de2c1bf58bce09eecc70476747d88a26163c3d6bb1d85235c24a558d1f16754.exe",
+        "identificacion": _identificacion("7de2c1bf58bce09eecc70476747d88a26163c3d6bb1d85235c24a558d1f16754", "77543bde72105ae1a28cc71815d9ea89ea162052", 903680, True),
+        "en_linea": None,
+        "pe": {"arquitectura": "x86 (32 bits)", "compilado": "2020-10-19", "firma_incrustada": False, "version": {"empresa": "", "nombre_original": ""}, "zona_firma": None,
+               "secciones": [{"nombre": ".text", "bytes": 833024, "entropia": 6.91}], "importaciones": {"mscoree.dll": ["_CorExeMain"]}},
+        "firma": None,
+        "suplantacion": [],
+        "defender": {"estado": "DETECTADO", "detalle": "TrojanSpy:MSIL/AgentTesla.SP!MTB"},
+        "yara": [],
+        "ember": {"estado": "ok", "puntuacion": 0.93},
+        "die": {"estado": "no aplicado", "detalle": "Defender bloqueó la copia de la muestra"},
+        "capa": {"estado": "no aplicado", "detalle": "Defender bloqueó la copia de la muestra"},
+    }
+
+
+def texto_falso():
+    """Un fichero que no es PE (un .txt con extensión que engaña): lo que no aplica sale None o «no aplica»."""
+    d = notepad_falso()
+    d["nombre"] = "nota.jpg"
+    d["identificacion"].update(bytes=123, tipo="Text document (text)", extension_engana=True, extensiones_esperadas=["txt"])
+    d.update(pe=None, firma=None, suplantacion=None, ember={"estado": "no aplica", "detalle": "solo ejecutables de Windows (PE)"},
+             capa={"estado": "no aplica", "detalle": "capa solo analiza ejecutables de Windows (PE)"},
+             die={"estado": "ok", "detectado": {"compilador": [], "lenguaje": [], "empaquetador": []}})
+    return d
+
+
+def hostil_falso(estados_hostiles=False):
+    """Un informe completo con cadenas hostiles en TODOS los campos de texto: es lo que mandaría un zip con nombres de atacante, un PE con datos de versión
+    y firmante de atacante, reglas YARA con descripciones de atacante y un servicio en línea comprometido. Con estados_hostiles=True también los estados
+    (los textos que gobiernan la lógica: «DETECTADO», «ok»...) son hostiles: un estado desconocido se enseña tal cual, como dato."""
+    h = HOSTIL_RICO
+    estado = (lambda valor: h) if estados_hostiles else (lambda valor: valor)
+    return {
+        "nombre": h,
+        "identificacion": {"sha256": h, "sha1": h, "bytes": 5, "tipo": h, "extension_engana": True, "extensiones_esperadas": [h], "malwarebazaar": [True, h], "circl": [True, h]},
+        "en_linea": {"CIRCL": {"estado": estado("malware"), "detalle": h}, "MalwareBazaar": {"estado": estado("malware"), "detalle": h},
+                     "VirusTotal": {"estado": estado("malware"), "detalle": h}, h: {"estado": h, "detalle": h}},
+        "pe": {"arquitectura": h, "compilado": h, "firma_incrustada": True, "version": {"empresa": h, "nombre_original": h}, "zona_firma": {"tras": 0, "dentro": 0, "relleno": 0},
+               "secciones": [{"nombre": h, "bytes": 5, "entropia": 7.5}], "importaciones": {h: [h, h]}},
+        "firma": {"estado": h, "tipo": h, "firmante": h},
+        "suplantacion": [h, h],
+        "defender": {"estado": estado("DETECTADO"), "detalle": h},
+        "yara": [[h, h]],
+        "ember": {"estado": estado("ok"), "puntuacion": 0.5, "detalle": h},
+        "die": {"estado": estado("ok"), "detectado": {h: [h], "lenguaje": [h], "empaquetador": []}, "detalle": h},
+        "capa": {"estado": estado("ok"), "capacidades": [[h, h]] * 7, "detalle": h},
+    }
 
 
 class VentanaFalsa:
@@ -108,9 +186,17 @@ try:
     directivas = {d.split()[0]: d.split()[1:] for d in csp.split("; ")}
     assert directivas["default-src"] == ["'none'"] and directivas["connect-src"] == ["'none'"], csp
     assert "'unsafe-inline'" not in csp and "'unsafe-eval'" not in csp, csp  # los scripts y estilos propios van por nonce
-    for prohibido in ("http://", "https://", "innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"):
+    for prohibido in ("http://", "https://", "innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "prefers-color-scheme", "alert(", "confirm(",
+                      'setAttribute("style"', "setAttribute('style'"):
         assert prohibido not in html, prohibido
     assert not re.search(r"\b(?:src|href)=|@import|url\(", html), "la página no carga ficheros externos"
+    assert html.count("<script") == 1 and html.count("<style") == 1, "un solo script y un solo estilo"
+    # Windows 95: los colores de la paleta, la fuente y el texto de la barra de título (que es solo decorativa: ningún botón dentro)
+    for color in ("#008080", "#c0c0c0", "#000080", "#1084d0", "#800000", "#008000", "#808080", "#ffffff", "#dfdfdf", "#0a0a0a", "Microsoft Sans Serif", "Tahoma"):
+        assert color in html, color
+    assert "<h1 class=\"titulo\">Argos — Analizador local de ficheros sospechosos</h1>" in html
+    # La entropía alta es la de la terminal: una sola definición en Python, la misma en la página
+    assert float(re.search(r"const ENTROPIA_ALTA = ([\d.]+);", html).group(1)) == estatico.ENTROPIA_ALTA
     primera, segunda = ventana.pagina(), ventana.pagina()
     assert "__NONCE__" not in primera and primera != segunda  # un nonce nuevo en cada arranque
     nonce = re.search(r"script-src 'nonce-([^']+)'", primera).group(1)
@@ -325,13 +411,19 @@ try:
     bloqueo, bloqueado = threading.Event(), threading.Event()
 
     def motor_de_la_ventana(ruta, clave=None, sin_red=False, secciones=analisis.SECCIONES, avisar=None):
-        """Falso: para el fichero de nombre hostil emite lo de motor_falso; para notepad.exe se queda a medias hasta que el test lo suelta."""
+        """Falso: para el fichero de nombre hostil emite cuatro informes completos; para notepad.exe se queda a medias hasta que el test lo suelta."""
         if ruta == en_disco:
-            yield from motor_falso(ruta, clave, sin_red, secciones, avisar)
+            llamadas.append((ruta, clave, sin_red))
+            for indice, (nombre, informe) in enumerate((("uno.txt", notepad_falso()), ("azorult.exe", azorult_falso()),
+                                                        (HOSTIL, hostil_falso()), ("nota.jpg", texto_falso()))):
+                avisar(indice, "nombre", nombre)
+                for parte in PARTES:
+                    avisar(indice, parte, informe[parte])
+                yield informe
         else:
             assert ruta == notepad, ruta
             avisar(0, "nombre", "notepad.exe")
-            avisar(0, "identificacion", {})
+            avisar(0, "identificacion", notepad_falso()["identificacion"])
             bloqueado.set()
             assert bloqueo.wait(30)
             avisar(0, "en_linea", None)  # ya con la ventana cerrada
@@ -380,9 +472,11 @@ try:
             w.evaluate_js("window.__v = []; document.addEventListener('securitypolicyviolation', e => window.__v.push(e.violatedDirective)); null")
             texto_de = lambda selector: w.evaluate_js(f"document.querySelector({json.dumps(selector)}).textContent")
 
-            # Soltar de mentira: la página manda un «drop» con una ruta que ella elige y WebView2 no entregó. No se fija nada y la página lo dice
+            # Soltar de mentira: la página manda un «drop» con una ruta que ella elige y WebView2 no entregó. No se fija nada y la banda de aviso lo dice
             en_bruto(w, "pywebviewEventHandler", json.dumps({"event": {"type": "drop", "dataTransfer": {"files": [{"name": "x.txt", "pywebviewFullPath": notepad}]}}, "nodeId": nodo}))
-            esperar(w, "document.getElementById('mensaje').classList.contains('error')")
+            esperar(w, "document.getElementById('aviso').hidden === false")
+            resultado["falso_aviso"] = w.evaluate_js("document.getElementById('aviso').hidden")
+            resultado["falso_texto"] = texto_de("#aviso")
             resultado["falso_elegido"] = puente._elegido
             resultado["falso_visible"] = w.evaluate_js("!document.getElementById('elegido').hidden")
 
@@ -395,26 +489,37 @@ try:
             resultado["tamano_mostrado"] = texto_de("#tamano")
             resultado["clave_visible"] = w.evaluate_js("!document.getElementById('campo-clave').hidden")
 
-            # Analizar desde la página (el botón; el puente de verdad), con el motor falso y nombres hostiles en el zip
+            # El informe completo: cuatro ficheros falsos con la forma real (limpio, malware medido, hostil en todos los campos y un no-PE)
+            def del_panel(js):
+                return w.evaluate_js(f"(() => {{ const p = document.querySelector('#paneles .informe-fichero:not([hidden])'); return {js}; }})()")
+
             with mock.patch.object(analisis, "informes", motor_de_la_ventana):
                 w.evaluate_js("document.getElementById('sinred').checked = true; document.getElementById('analizar').click(); null")
                 esperar(w, "document.getElementById('resumen').textContent.startsWith('Terminado')")
             resultado["resumen"] = texto_de("#resumen")
-            resultado["ficheros"] = w.evaluate_js("[...document.querySelectorAll('.nombre-fichero')].map(e => e.textContent)")
-            resultado["estados"] = w.evaluate_js("[...document.querySelectorAll('.partes')].map(l => [...l.children].map(li => li.firstChild.textContent))")
-            resultado["en_curso"] = w.evaluate_js("document.querySelectorAll('.en-curso').length")
+            resultado["pestanas"] = w.evaluate_js("[...document.querySelectorAll('.pestana')].map(e => e.textContent)")
+            resultado["seleccion_inicial"] = w.evaluate_js("[...document.querySelectorAll('.pestana')].map(e => e.getAttribute('aria-selected'))")
+            resultado["visible"] = w.evaluate_js("document.querySelectorAll('.informe-fichero:not([hidden])').length")
+            for i, nombre in enumerate(("uno", "azorult", "hostil", "texto")):
+                if i:
+                    w.evaluate_js(f"document.querySelectorAll('.pestana')[{i}].click(); null")
+                resultado[f"resumen_{nombre}"] = del_panel("p.querySelector('.resumen-fichero').textContent")
+                resultado[f"panel_{nombre}"] = del_panel("p.textContent")
+                resultado[f"ember_{nombre}"] = del_panel("p.querySelector('.pista-ember .relleno')?.style.width ?? null")
             resultado["botones"] = w.evaluate_js("['elegir', 'analizar', 'clave', 'sinred'].map(id => document.getElementById(id).disabled)")
+            resultado["progreso_oculto"] = w.evaluate_js("document.getElementById('avance').hidden")
             resultado["inyecciones"] = w.evaluate_js("[window.__xss, document.querySelectorAll('script').length, document.querySelectorAll('img').length]")
             resultado["motor"] = list(llamadas[-1])
 
-            # Contraseña mala de un zip, con el motor de verdad: el error en la página
+            # Contraseña mala de un zip, con el motor de verdad: el aviso de error, sin ventana modal
             entregar(zip_mala)
             soltar_en_bruto(w, zip_mala, nodo)
             esperar(w, "document.getElementById('nombre').textContent == 'mala.zip'")
             resultado["clave_visible_zip"] = w.evaluate_js("!document.getElementById('campo-clave').hidden")
             w.evaluate_js("document.getElementById('clave').value = 'mala'; document.getElementById('analizar').click(); null")
-            esperar(w, "document.getElementById('mensaje').textContent == 'contraseña incorrecta'")
-            resultado["error_clase"] = w.evaluate_js("document.getElementById('mensaje').className")
+            esperar(w, "document.getElementById('aviso').hidden === false")
+            resultado["error_texto"] = texto_de("#aviso")
+            resultado["error_tipo"] = w.evaluate_js("document.getElementById('aviso').className")
             resultado["botones_tras_error"] = w.evaluate_js("['elegir', 'analizar', 'clave', 'sinred'].map(id => document.getElementById(id).disabled)")
             resultado["violaciones_nuevas"] = w.evaluate_js("window.__v")
 
@@ -425,7 +530,7 @@ try:
             with mock.patch.object(analisis, "informes", motor_de_la_ventana):
                 w.evaluate_js("document.getElementById('analizar').click(); null")
                 assert bloqueado.wait(30)
-                esperar(w, "document.querySelectorAll('.hecha').length >= 1")
+                esperar(w, "document.getElementById('actividad').textContent.includes('notepad.exe')")
 
             # Una página hostil manda el mensaje en bruto [nombre, parámetros en JSON, id] sin pasar por window.pywebview.api
             for nombre, parametros in (("_privado", "[]"), ("version.__globals__.update", '[{"__version__": "cambiada desde la página"}]'), ("_soltar", "[{}]"),
@@ -469,16 +574,28 @@ try:
     assert resultado["api"] == ["analizar", "elegir", "version"], resultado  # lo único que la página ve del puente
     assert privado == [] and ventana.__version__ == __version__, (privado, ventana.__version__)  # la página no llegó a nada más que a lo expuesto
     assert resultado["falso_elegido"] is None and resultado["falso_visible"] is False, resultado  # el drop de mentira no fijó nada
+    assert resultado["falso_aviso"] is False and "No se pudo leer la ruta" in resultado["falso_texto"], resultado  # el aviso va en la banda, no en un popup
     assert resultado["elegido"] == en_disco and resultado["nombre_mostrado"] == EN_DISCO, resultado  # el nombre llegó como dato: el literal
     assert resultado["tamano_mostrado"] == "10 bytes" and resultado["clave_visible"] is False, resultado
-    assert resultado["resumen"] == f"Terminado: 2 ficheros analizados ({2 * len(PARTES)} partes hechas)", resultado
-    assert resultado["ficheros"] == ["uno.txt", HOSTIL], resultado
-    por_fichero = ["hecha (no aplica)" if parte == "en_linea" else "hecha" for parte in PARTES]
-    assert resultado["estados"] == [por_fichero] * 2 and resultado["en_curso"] == 0, resultado
-    assert resultado["botones"] == [False] * 4, resultado  # al terminar se vuelve a poder todo
+    assert resultado["resumen"] == "Terminado: 4 ficheros analizados; 10 señales de alarma", resultado
+    assert resultado["pestanas"] == ["uno.txt", "azorult.exe", HOSTIL, "nota.jpg"], resultado
+    assert resultado["seleccion_inicial"] == ["true", "false", "false", "false"] and resultado["visible"] == 1, resultado  # una pestaña por fichero, la primera abierta
+    assert resultado["resumen_uno"].startswith("Ninguna señal de alarma en lo analizado") and "0,03" in resultado["resumen_uno"], resultado
+    assert resultado["ember_uno"] == "3%", resultado  # la barra de EMBER, redondeada
+    assert "468ffe129c395abf6b21a09efdf261910a95fb98aa982ead73caa7b2b684577e" in resultado["panel_uno"], resultado
+    assert "válida" in resultado["panel_uno"] and "sin amenazas" in resultado["panel_uno"] and "sin coincidencias" in resultado["panel_uno"], resultado
+    assert "Microsoft Visual C/C++" in resultado["panel_uno"] and ".text" in resultado["panel_uno"], resultado
+    assert resultado["resumen_azorult"].startswith("Señales de alarma: 2"), resultado
+    assert "MalwareBazaar" in resultado["resumen_azorult"] and "Microsoft Defender" in resultado["resumen_azorult"], resultado
+    assert "0,93" in resultado["resumen_azorult"] and resultado["ember_azorult"] == "93%", resultado
+    assert resultado["resumen_hostil"].startswith("Señales de alarma: 7") and "Esto solo cuenta señales" in resultado["resumen_hostil"], resultado
+    assert resultado["ember_hostil"] == "50%" and HOSTIL in resultado["panel_hostil"], resultado  # el texto hostil se pinta como texto
+    assert resultado["resumen_texto"].startswith("Señales de alarma: 1") and "Extensión que engaña" in resultado["resumen_texto"], resultado
+    assert "no es un ejecutable de Windows" in resultado["panel_texto"] and resultado["ember_texto"] is None, resultado  # no-PE: ni EMBER ni estático
+    assert resultado["botones"] == [False] * 4 and resultado["progreso_oculto"] is True, resultado  # al terminar se vuelve a poder todo
     assert resultado["inyecciones"] == [None, 1, 0], resultado  # ni el script ni la imagen del nombre hostil existen: solo el script de la página
     assert resultado["motor"] == [en_disco, None, True], resultado  # la ruta elegida por Python; sin clave (vacía) y con el interruptor de la página
-    assert resultado["clave_visible_zip"] is True and "error" in resultado["error_clase"].split(), resultado
+    assert resultado["clave_visible_zip"] is True and resultado["error_texto"] == "contraseña incorrecta" and resultado["error_tipo"] == "error", resultado
     assert resultado["botones_tras_error"] == [False] * 4, resultado
     assert resultado["violaciones_nuevas"] == [], resultado  # nada de lo anterior rozó la CSP
     assert resultado["ejecutado"] is False and set(resultado["violaciones"]) == {"script-src-elem", "connect-src"}, resultado

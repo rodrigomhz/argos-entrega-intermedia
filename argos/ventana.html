@@ -7,130 +7,245 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-__NONCE__'; style-src 'nonce-__NONCE__'; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Argos</title>
 <style nonce="__NONCE__">
+  /* Windows 95 hecho a mano, sin librerías: las de este estilo traen fuentes e imágenes y la CSP las bloquearía. El relieve es todo box-shadow, los iconos son formas CSS y
+     las barras de bloques, un degradado. Lo que se mide en JS (el ancho de una barra) se pone con style.width: la CSP no bloquea el CSSOM, solo el atributo style="..." */
   :root {
-    color-scheme: light dark;
-    --fondo: #f5f6f8;
-    --zona: #ffffff;
-    --texto: #1b1f24;
-    --suave: #5a6572;
-    --borde: #8c97a5;
-    --acento: #1f6feb;
-    --sobre: #e3eefc;
-    --error: #b42318;
-    --hecha: #1a7f37;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --fondo: #14171c;
-      --zona: #1b2027;
-      --texto: #e7eaee;
-      --suave: #9aa5b2;
-      --borde: #546071;
-      --acento: #4c8dff;
-      --sobre: #1d2b42;
-      --error: #ff7b72;
-      --hecha: #56d364;
-    }
+    color-scheme: light; /* Windows 95 no tenía modo oscuro */
+    --escritorio: #008080;
+    --gris: #c0c0c0;
+    --claro: #dfdfdf;
+    --blanco: #ffffff;
+    --sombra: #808080;
+    --negro: #0a0a0a;
+    --azul: #000080;
+    --azul-claro: #1084d0;
+    --alarma: #800000;
+    --limpio: #008000;
+    --apagado: #808080;
+    /* claro arriba e izquierda, oscuro abajo y derecha: sube = botones y ventanas; baja = campos y listas; pulsado = un botón apretado */
+    --sube: inset -1px -1px var(--negro), inset 1px 1px var(--blanco), inset -2px -2px var(--sombra), inset 2px 2px var(--claro);
+    --baja: inset -1px -1px var(--blanco), inset 1px 1px var(--sombra), inset -2px -2px var(--claro), inset 2px 2px var(--negro);
+    --pulsado: inset -1px -1px var(--blanco), inset 1px 1px var(--negro), inset -2px -2px var(--claro), inset 2px 2px var(--sombra);
+    --fuente: "Microsoft Sans Serif", Tahoma, sans-serif;
+    --fija: "Lucida Console", "Courier New", monospace;
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
   html, body { height: 100%; margin: 0; }
   body {
     display: flex;
-    flex-direction: column;
-    gap: 16px;
-    padding: 24px;
-    background: var(--fondo);
-    color: var(--texto);
-    font-family: system-ui, sans-serif;
+    padding: clamp(4px, 1.2vw, 12px);
+    background: var(--escritorio);
+    color: #000;
+    font: 13px/1.35 var(--fuente);
+    cursor: default;
   }
-  h1 { margin: 0 0 4px; font-size: 1.75rem; }
-  h3 { margin: 0 0 6px; font-size: 1rem; overflow-wrap: anywhere; }
-  header p { margin: 0; color: var(--suave); }
-  main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 16px; overflow: auto; }
-  #zona {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    padding: 28px 16px;
-    border: 3px dashed var(--borde);
-    border-radius: 12px;
-    background: var(--zona);
-    color: var(--suave);
-    font-size: 1.25rem;
+  body.ocupado { cursor: progress; } /* el reloj de arena, mientras capa trabaja */
+  ::selection { background: var(--azul); color: #fff; }
+  p { margin: 0; }
+
+  .ventana { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 3px; background: var(--gris); box-shadow: var(--sube); }
+  /* La barra de título es solo decorativa: el marco de verdad es el de Windows 11 */
+  .titulo {
+    margin: 0 0 3px;
+    padding: 3px 5px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    background: linear-gradient(90deg, var(--azul), var(--azul-claro));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    user-select: none;
   }
-  #zona p { margin: 0; }
-  #zona.sobre { border-color: var(--acento); background: var(--sobre); color: var(--texto); }
+  .cuerpo { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 6px 4px 4px; overflow: auto; }
+
+  fieldset { position: relative; margin: 0; min-width: 0; padding: 14px 10px 8px; border: 1px solid var(--sombra); box-shadow: inset 1px 1px var(--blanco), 1px 1px var(--blanco); }
+  /* El título del grupo, encima del borde y con el fondo del panel: como los group box de Windows 95 (y la línea no le pasa por encima) */
+  legend { position: absolute; top: -7px; left: 6px; padding: 0 3px; line-height: 13px; background: var(--gris); }
+  .hundido { background: #fff; box-shadow: var(--baja); }
+  .apagado { color: var(--apagado); }
+  .alarma { color: var(--alarma); font-weight: 700; }
+  .limpio { color: var(--limpio); }
+
   button {
     font: inherit;
-    padding: 8px 18px;
-    border: 1px solid var(--borde);
-    border-radius: 8px;
-    background: var(--zona);
-    color: var(--texto);
-    cursor: pointer;
+    min-width: 75px;
+    min-height: 23px;
+    margin: 1px;
+    padding: 2px 12px;
+    border: 0;
+    border-radius: 0;
+    color: #000;
+    background: var(--gris);
+    box-shadow: var(--sube);
+    cursor: inherit;
   }
-  button.principal { border-color: var(--acento); background: var(--acento); color: #fff; }
-  button:disabled, input:disabled { opacity: 0.5; cursor: not-allowed; }
-  #elegido { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--zona); }
-  #elegido p, #elegido label { margin: 0; }
+  button.principal { font-weight: 700; box-shadow: 0 0 0 1px #000, var(--sube); } /* el botón por defecto lleva un borde negro de más */
+  button:active:not(:disabled) { padding: 3px 11px 1px 13px; box-shadow: var(--pulsado); }
+  button.principal:active:not(:disabled) { box-shadow: 0 0 0 1px #000, var(--pulsado); }
+  button:focus-visible { outline: 1px dotted #000; outline-offset: -5px; }
+  button:disabled { color: var(--sombra); text-shadow: 1px 1px 0 #fff; }
+  .botones { display: flex; flex-wrap: wrap; gap: 6px; }
+  input[type="password"] { font: inherit; width: 16em; max-width: 100%; padding: 3px 4px; border: 0; border-radius: 0; color: #000; background: #fff; box-shadow: var(--baja); }
+  input:disabled { color: var(--sombra); background: var(--gris); }
+  .ayuda { font-size: 12px; color: #404040; }
+
+  /* La casilla se dibuja a mano: la marca es un par de bordes girados (sin imágenes) */
+  .casilla { display: flex; align-items: center; gap: 6px; }
+  .casilla input { appearance: none; position: relative; flex: none; width: 13px; height: 13px; margin: 0; background: #fff; box-shadow: var(--baja); }
+  .casilla input:checked::after { content: ""; position: absolute; left: 4px; top: 0; width: 3px; height: 8px; border: solid #000; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .casilla input:disabled { background: var(--gris); }
+  .casilla input:disabled:checked::after { border-color: var(--sombra); }
+  .casilla:has(input:focus-visible) span { outline: 1px dotted #000; }
+
+  /* Soltar o elegir */
+  #zona { display: flex; flex-direction: column; gap: 6px; }
+  #zona .soltar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .caja-soltar { flex: 1 1 14em; display: flex; align-items: center; justify-content: center; min-height: 29px; padding: 4px 10px; color: var(--sombra); }
+  #zona.sobre .caja-soltar { color: #fff; background: var(--azul); }
+  #elegido { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; border-top: 1px solid var(--sombra); box-shadow: inset 0 1px var(--blanco); }
+  #elegido p { margin: 0; }
   #nombre { overflow-wrap: anywhere; }
-  #tamano, .ayuda { color: var(--suave); font-size: 0.9rem; }
-  #campo-clave { display: flex; flex-direction: column; gap: 4px; }
-  #clave { font: inherit; padding: 6px 8px; border: 1px solid var(--borde); border-radius: 6px; background: var(--fondo); color: var(--texto); max-width: 22rem; }
-  .interruptor { display: flex; align-items: center; gap: 8px; }
-  #acciones { display: flex; gap: 12px; }
-  #mensaje { margin: 0; min-height: 1.2em; color: var(--suave); }
-  #mensaje.error { color: var(--error); font-weight: 600; }
-  #progreso { display: flex; flex-direction: column; gap: 10px; }
-  .fichero { padding: 12px 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--zona); }
-  .partes { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
-  .partes li { display: flex; gap: 10px; }
-  .estado { min-width: 10.5rem; color: var(--suave); }
-  .hecha .estado { color: var(--hecha); font-weight: 600; }
-  .interrumpida .estado { color: var(--error); font-weight: 600; }
-  .en-curso .estado { color: var(--acento); font-weight: 600; }
-  /* capa tarda 1 o 2 minutos por ejecutable: el parpadeo y el cronómetro enseñan que sigue trabajando */
-  @media (prefers-reduced-motion: no-preference) {
-    .en-curso .estado { animation: pulso 1.4s ease-in-out infinite; }
-    @keyframes pulso { 50% { opacity: 0.45; } }
+  #tamano { color: #404040; }
+  #campo-clave { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+  #campo-clave .ayuda { flex-basis: 100%; }
+  .acciones { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; }
+
+  /* Progreso: bloques azules como los de Windows 95 */
+  #avance { display: flex; flex-direction: column; gap: 4px; }
+  .barra { height: 20px; padding: 3px; background: var(--gris); box-shadow: var(--baja); }
+  .relleno { height: 100%; width: 0; background: repeating-linear-gradient(90deg, var(--azul) 0 8px, transparent 8px 10px); }
+  #actividad { overflow-wrap: anywhere; }
+
+  /* El informe: pestañas (una por fichero de un zip) y, debajo, la página */
+  #informe { flex: 1 0 14em; min-height: 0; display: flex; flex-direction: column; }
+  #pestanas { display: flex; flex-wrap: wrap; padding: 0 2px; }
+  .pestana {
+    min-width: 0;
+    max-width: 16em;
+    min-height: 0;
+    margin: 2px 0 0;
+    padding: 3px 10px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    box-shadow: inset -1px 0 var(--negro), inset 1px 1px var(--blanco), inset -2px 0 var(--sombra), inset 2px 2px var(--claro);
   }
-  #resumen { margin: 0; font-weight: 600; }
-  footer { min-height: 1.2em; color: var(--suave); font-size: 0.85rem; }
+  .pestana:active:not(:disabled) { padding: 3px 10px; box-shadow: inset -1px 0 var(--negro), inset 1px 1px var(--blanco), inset -2px 0 var(--sombra), inset 2px 2px var(--claro); }
+  .pestana[aria-selected="true"] { position: relative; z-index: 1; margin: 0 0 -2px; padding: 5px 10px 5px; }
+  .pestana:focus-visible { outline-offset: -4px; }
+  #paneles { flex: 1; min-height: 0; overflow: auto; padding: 8px; box-shadow: var(--sube); }
+  .vacio { padding: 4px; }
+  .informe-fichero { display: flex; flex-direction: column; gap: 8px; }
+  .nombre-fichero { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+  .bloque { display: contents; }
+  .filas { display: flex; flex-direction: column; gap: 3px; }
+  .fila { display: grid; grid-template-columns: 11em minmax(0, 1fr); gap: 0 8px; }
+  .etq { overflow-wrap: anywhere; }
+  .val { min-width: 0; overflow-wrap: anywhere; }
+  .huella { font: 12px/1.4 var(--fija); user-select: all; } /* un clic selecciona la huella entera: navigator.clipboard no existe en esta página (ver el script) */
+  .titular { font-weight: 700; }
+  .senales, .sin-comprobar { margin: 2px 0; padding-left: 20px; }
+  .nota { margin-top: 6px; font-size: 12px; color: #404040; }
+  .ember-fila { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin-top: 6px; }
+  .pista-ember { flex: 0 0 14em; height: 16px; padding: 2px; }
+  .pista-ember .relleno { background: repeating-linear-gradient(90deg, var(--azul) 0 6px, transparent 6px 8px); }
+  .lista { max-height: 14em; margin: 3px 0 0; padding: 3px 6px; overflow: auto; list-style: none; }
+  .lista li { overflow-wrap: anywhere; }
+  .tecnica { color: #404040; }
+  .tabla-caja { margin-top: 3px; overflow-x: auto; }
+  .tabla { border-collapse: collapse; width: 100%; }
+  .tabla th { padding: 1px 8px; font-weight: 400; text-align: left; background: var(--gris); box-shadow: var(--sube); }
+  .tabla td { padding: 1px 8px; white-space: nowrap; }
+  .tabla .der { text-align: right; }
+  .tabla .alta { color: var(--alarma); font-weight: 700; }
+  .funciones { padding: 2px 0 4px 17px; overflow-wrap: anywhere; }
+  /* Plegables al estilo del explorador: un cuadrito con + o − */
+  details > summary { display: flex; gap: 6px; align-items: center; list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary::before { content: "+"; flex: none; width: 11px; height: 11px; font: 700 11px/9px var(--fija); text-align: center; background: #fff; border: 1px solid var(--sombra); }
+  details[open] > summary::before { content: "−"; }
+  details > summary:focus-visible { outline: 1px dotted #000; }
+  details .lista, details .tabla-caja { margin-left: 17px; }
+
+  /* La barra de estado de abajo: el resumen de una línea y la versión */
+  .estado-barra { display: flex; gap: 3px; margin-top: 3px; flex: none; }
+  .estado-barra > * { min-height: 21px; padding: 2px 6px; box-shadow: inset 1px 1px var(--sombra), inset -1px -1px var(--blanco); }
+  #resumen { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  #pie { flex: none; }
+
+  /* Los avisos van en una banda dentro de la página, no en un cuadro modal: no bloquean nada ni hay que cerrarlos */
+  #aviso { padding: 4px 8px; background: #ffffe1; box-shadow: var(--baja); }
+  #aviso.error { color: var(--alarma); font-weight: 700; }
+
+  /* En una ventana baja (el mínimo es 560×420) el informe no cabe dentro de lo que queda debajo de los controles: se desplaza todo junto, como un documento */
+  @media (max-height: 520px) {
+    #informe { flex: none; }
+    #paneles { overflow: visible; }
+    .ayuda { display: none; }
+  }
+
+  /* Barras de desplazamiento al estilo Windows 95: el carril punteado, el cursor y los botones en relieve, y las flechas, un degradado */
+  ::-webkit-scrollbar { width: 16px; height: 16px; }
+  ::-webkit-scrollbar-track { background: conic-gradient(var(--gris) 25%, #fff 0 50%, var(--gris) 0 75%, #fff 0) 0 0 / 2px 2px; }
+  ::-webkit-scrollbar-thumb { background: var(--gris); box-shadow: var(--sube); }
+  ::-webkit-scrollbar-corner { background: var(--gris); }
+  ::-webkit-scrollbar-button:single-button { display: block; width: 16px; height: 16px; box-shadow: var(--sube); }
+  ::-webkit-scrollbar-button:single-button:vertical:decrement { background: conic-gradient(from 135deg at 50% 0, #000 90deg, transparent 0) 4px 5px / 8px 4px no-repeat, var(--gris); }
+  ::-webkit-scrollbar-button:single-button:vertical:increment { background: conic-gradient(from -45deg at 50% 100%, #000 90deg, transparent 0) 4px 6px / 8px 4px no-repeat, var(--gris); }
+  ::-webkit-scrollbar-button:single-button:horizontal:decrement { background: conic-gradient(from 45deg at 100% 50%, #000 90deg, transparent 0) 5px 4px / 4px 8px no-repeat, var(--gris); }
+  ::-webkit-scrollbar-button:single-button:horizontal:increment { background: conic-gradient(from 225deg at 0 50%, #000 90deg, transparent 0) 6px 4px / 4px 8px no-repeat, var(--gris); }
 </style>
 </head>
 <body>
-<header>
-  <h1>Argos</h1>
-  <p>Analizador local de ficheros sospechosos: nada sale de tu equipo salvo las huellas</p>
-</header>
-<main>
-  <section id="zona">
-    <p>Arrastra aquí un fichero</p>
-    <p class="ayuda">o</p>
-    <button id="elegir" type="button" disabled>Elegir fichero</button>
-  </section>
-  <section id="elegido" hidden>
-    <p><strong id="nombre"></strong> <span id="tamano"></span></p>
-    <div id="campo-clave" hidden>
-      <label for="clave">Contraseña del zip</label>
-      <input id="clave" type="password" maxlength="256" autocomplete="off" spellcheck="false">
-      <span class="ayuda">Los zips de MalwareBazaar usan «infected». Vacía, se analiza el zip como un fichero más.</span>
+<div class="ventana" id="ventana">
+  <h1 class="titulo">Argos — Analizador local de ficheros sospechosos</h1>
+  <div class="cuerpo">
+    <fieldset id="zona">
+      <legend>Fichero</legend>
+      <div class="soltar">
+        <div class="caja-soltar hundido">Arrastra aquí un fichero</div>
+        <!-- Los botones de esta fila se alinean solos: otro botón (type="button") cabe aquí sin tocar el estilo -->
+        <div class="botones" id="botones-zona"><button id="elegir" type="button" disabled>Elegir fichero</button></div>
+      </div>
+      <div id="elegido" hidden>
+        <p><strong id="nombre"></strong> <span id="tamano"></span></p>
+        <div id="campo-clave" hidden>
+          <label for="clave">Contraseña del zip:</label>
+          <input id="clave" type="password" maxlength="256" autocomplete="off" spellcheck="false">
+          <span class="ayuda">Los zips de MalwareBazaar usan «infected». Vacía, se analiza el zip como un fichero más.</span>
+        </div>
+        <div class="acciones">
+          <label class="casilla"><input id="sinred" type="checkbox" role="switch"><span>Sin red (no consultar la huella en línea)</span></label>
+          <div class="botones"><button id="analizar" class="principal" type="button">Analizar</button></div>
+        </div>
+      </div>
+    </fieldset>
+    <p id="aviso" hidden role="status"></p>
+    <div id="avance" hidden>
+      <div class="barra" role="progressbar" aria-label="Progreso del análisis"><div class="relleno" id="relleno"></div></div>
+      <p id="actividad"></p>
     </div>
-    <label class="interruptor"><input id="sinred" type="checkbox" role="switch"> Sin red (no consultar la huella en línea)</label>
-    <div id="acciones"><button id="analizar" class="principal" type="button">Analizar</button></div>
-  </section>
-  <p id="mensaje" role="status" aria-live="polite"></p>
-  <section id="progreso" hidden></section>
-  <p id="resumen"></p>
-</main>
-<footer id="pie">Versión: …</footer>
+    <section id="informe" aria-label="Informe">
+      <div id="pestanas" role="tablist" hidden></div>
+      <div id="paneles"></div>
+    </section>
+  </div>
+  <div class="estado-barra">
+    <p id="resumen" role="status" aria-live="polite">Listo</p>
+    <p id="pie">Versión: …</p>
+  </div>
+</div>
 <script nonce="__NONCE__">
-  // Todo texto que cambie la página se pone con textContent (no interpreta HTML), nunca montando HTML: un nombre dentro de un zip o un dato de un servicio es del atacante
+  // Todo lo que llega de fuera (nombres dentro de un zip, empresa y firmante de un PE, reglas YARA, detalles de los servicios, capacidades, DLL, funciones...) es del atacante o de un
+  // tercero. Se pinta SOLO con createElement y textContent/append de cadenas, que entran como texto: en esta página no hay ningún camino que convierta un texto en elementos
   const $ = (id) => document.getElementById(id);
-  const zona = $("zona"), pie = $("pie"), mensaje = $("mensaje"), progreso = $("progreso"), resumen = $("resumen");
+  const zona = $("zona"), pie = $("pie"), estadoBarra = $("resumen"), actividad = $("actividad"), relleno = $("relleno");
   const botonElegir = $("elegir"), botonAnalizar = $("analizar"), clave = $("clave"), sinRed = $("sinred");
+  const pestanas = $("pestanas"), paneles = $("paneles");
+  // El mismo valor que estatico.ENTROPIA_ALTA: una sección por encima parece comprimida o cifrada (test_ventana.py comprueba que coinciden)
+  const ENTROPIA_ALTA = 7;
 
   const ETIQUETAS = {
     identificacion: "Identificación (huellas y tipo)",
@@ -144,138 +259,398 @@
     die: "Detect It Easy",
     capa: "capa (capacidades, tarda 1-2 min)",
   };
-  // Las partes de un fichero llegan en orden, así que la «en curso» es siempre la primera sin hacer
-  let partes = [];       // las partes en el orden en que llegan (las manda Python al empezar)
-  let ficheros = [];     // por índice (un fichero suelto o cada uno de un zip): { estados: {parte: <span>}, items: {parte: <li>} }
-  let enCurso = null;    // { item, estado, desde }
+  let partes = [];       // las partes de cada fichero, en el orden en que llegan (las manda Python al empezar)
+  let ficheros = [];     // por índice (un fichero suelto o cada miembro de un zip): { nombre, datos: {parte: valor}, llegadas: Set, panel, pestana, bloques: [...] }
+  let enCurso = null;    // { fichero, parte, desde }: la parte que se está calculando (siempre la primera que falta, porque llegan en orden)
   let temporizador = null;
 
-  function aviso(texto, esError) {
-    mensaje.textContent = texto;
-    mensaje.classList.toggle("error", Boolean(esError));
+  // Los caracteres bidi de control (U+202A-202E, U+2066-2069) reordenan lo que se ve de un nombre («factura‮gpj.exe» se vería «facturaexe.jpg»): salen escritos, como hace la terminal
+  const limpiar = (valor) => String(valor).replace(/[‪-‮⁦-⁩]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
+  // Un elemento con su contenido: los nodos entran tal cual y lo demás (cadenas, números) como TEXTO
+  function el(etiqueta, clase, ...contenido) {
+    const nodo = document.createElement(etiqueta);
+    if (clase) nodo.className = clase;
+    for (const c of contenido) {
+      if (c === null || c === undefined || c === false) continue;
+      nodo.append(c instanceof Node ? c : limpiar(c));
+    }
+    return nodo;
   }
+  const fila = (etiqueta, ...valor) => el("div", "fila", el("span", "etq", etiqueta), el("span", "val", ...valor));
+  const apagado = (texto) => el("span", "apagado", texto);
+  const pendiente = () => apagado("pendiente…");
+  const noPE = () => apagado("no es un ejecutable de Windows");
+  const miles = (n) => Number(n).toLocaleString("es-ES", { useGrouping: "always" });
+  const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
+  const hay = (f, ...ps) => ps.every((p) => f.llegadas.has(p));
 
   function tamano(bytes) {
     const unidades = ["bytes", "KB", "MB", "GB"];
     let n = bytes, i = 0;
     while (n >= 1024 && i < unidades.length - 1) { n /= 1024; i++; }
     const cifra = n.toLocaleString("es-ES", { maximumFractionDigits: i ? 1 : 0 });
-    return i ? `${cifra} ${unidades[i]} (${bytes.toLocaleString("es-ES")} bytes)` : `${cifra} bytes`;
+    return i ? `${cifra} ${unidades[i]} (${miles(bytes)} bytes)` : `${cifra} bytes`;
   }
 
-  function reloj() {
-    if (!enCurso) return;
-    const s = Math.floor((Date.now() - enCurso.desde) / 1000);
-    enCurso.estado.textContent = `en curso… ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  // --- Avisos (rechazado, aviso y error): una banda dentro de la página, sin cuadro modal ni nada que cerrar ---
+  const aviso = $("aviso");
+
+  function mostrarAviso(tipo, texto) {
+    aviso.hidden = false;
+    aviso.className = tipo === "error" ? "error" : "";
+    aviso.textContent = limpiar(texto);
   }
 
-  function marcarEnCurso(item, estado) {
-    enCurso = { item, estado, desde: Date.now() };
-    item.classList.add("en-curso");
+  function ocultarAviso() {
+    aviso.hidden = true;
+    aviso.textContent = "";
+    aviso.className = "";
+  }
+
+  // --- Lo que dice cada parte del análisis (los mismos textos que la terminal: argos/__main__.py) ---
+  const claseEstado = (estado) => (estado === "malware" || estado === "DETECTADO" ? "alarma" : ["sin clave", "límite", "error", "omitido", "no disponible", "no aplica", "no aplicado", "tiempo agotado"].includes(estado) ? "apagado" : "");
+
+  function listaLocal(resultado, verbo, siEsta, siNoEsta) {
+    if (resultado === null) return apagado("no disponible (ejecuta «argos actualiza»)");
+    const [esta, fecha] = resultado;
+    return el("span", null, `${verbo} ${fecha}: `, esta ? siEsta : siNoEsta);
+  }
+
+  function herramienta(r, texto) {
+    if (r.estado === "ok") return texto(r);
+    if (r.estado === "no disponible") return apagado("no disponible (ejecuta «argos actualiza»)");
+    return apagado(r.estado + (r.detalle ? `: ${r.detalle}` : ""));
+  }
+
+  const textoDie = (r) => Object.entries(r.detectado).filter(([, valores]) => valores.length).map(([etiqueta, valores]) => `${etiqueta}: ${valores.join(", ")}`).join("; ") || "no detecta compilador, lenguaje ni empaquetador";
+  // Sin umbral a propósito: decir «sospechoso» a partir de un número sin haber medido sus falsos positivos sería inventárselo (se calibra en el hito 7)
+  const textoEmber = (r) => `${r.puntuacion.toFixed(2).replace(".", ",")} (0 = parece legítimo, 1 = parece malware; umbral sin calibrar hasta el hito 7)`;
+
+  function capacidades(r) {
+    const c = r.capacidades;
+    if (!c.length) return "ninguna";
+    const lista = el("ul", "lista hundido", ...c.map(([nombre, tecnica]) => el("li", null, nombre, tecnica ? el("span", "tecnica", ` [${tecnica}]`) : null)));
+    // Una lista larga ocuparía el informe entero: plegada, y con el número a la vista
+    return c.length > 5 ? el("details", null, el("summary", null, `${plural(c.length, "capacidad", "capacidades")} (mostrar la lista)`), lista)
+                        : el("div", null, plural(c.length, "capacidad", "capacidades"), lista);
+  }
+
+  function firma(pe, f) {
+    const s = f.datos.firma;
+    if (s === null) return `${pe.firma_incrustada ? "lleva firma incrustada" : "no lleva firma incrustada"}; sin verificar (el fichero está en memoria)`;
+    const firmante = s.firmante.split(",")[0].replace(/^CN=/, "").trim();  // "CN=Microsoft Windows, O=..." → "Microsoft Windows"
+    const detalles = [s.tipo, firmante && `firmante: ${firmante}`].filter(Boolean).join(", ");
+    const clase = s.estado === "válida" ? "limpio" : /^(ROTA|no es de confianza)/.test(s.estado) ? "alarma" : "";
+    return el("span", clase, s.estado + (detalles ? ` (${detalles})` : ""));
+  }
+
+  function suplantacion(pe, f) {
+    const avisos = f.datos.suplantacion;
+    if (avisos.length) return el("div", "alarma", ...avisos.map((a) => el("div", null, a)));
+    return f.datos.firma !== null ? el("span", "limpio", "sin indicios") : apagado("sin comprobar (no se leyó la firma: el fichero está en memoria)");
+  }
+
+  function yara(coincidencias) {
+    if (coincidencias === null) return apagado("no disponible (ejecuta «argos actualiza»)");
+    if (!coincidencias.length) return el("span", "limpio", "sin coincidencias");
+    const lista = el("ul", "lista hundido", ...coincidencias.map(([nombre, descripcion]) => el("li", null, el("strong", null, nombre), descripcion ? ` (${descripcion})` : null)));
+    return el("div", null, el("span", "alarma", plural(coincidencias.length, "regla", "reglas")), lista);
+  }
+
+  function secciones(pe) {
+    const cabecera = el("tr", null, el("th", null, "Sección"), el("th", "der", "Bytes"), el("th", "der", "Entropía"), el("th", null, ""));
+    const cuerpo = pe.secciones.map((s) => {
+      const alta = s.entropia > ENTROPIA_ALTA;
+      return el("tr", alta ? "alta" : null, el("td", null, s.nombre), el("td", "der", miles(s.bytes)), el("td", "der", s.entropia.toFixed(2)), el("td", null, alta ? "← ENTROPÍA ALTA" : null));
+    });
+    return el("div", "tabla-caja hundido", el("table", "tabla", el("thead", null, cabecera), el("tbody", null, ...cuerpo)));
+  }
+
+  function importaciones(pe) {
+    const dlls = Object.entries(pe.importaciones);
+    const total = dlls.reduce((n, [, funciones]) => n + funciones.length, 0);
+    const texto = `${plural(total, "función", "funciones")} de ${plural(dlls.length, "DLL", "DLL")}`;
+    if (!dlls.length) return texto;
+    const lista = el("div", "lista hundido", ...dlls.map(([dll, funciones]) => el("details", null, el("summary", null, `${dll} (${funciones.length})`), el("div", "funciones", funciones.join(", ")))));
+    return el("details", null, el("summary", null, `${texto} (mostrar la lista)`), lista);
+  }
+
+  const soloPE = (pintar) => (f) => (f.datos.pe === null ? noPE() : pintar(f.datos.pe, f));
+  // Cada grupo del informe, y en él cada fila: deps son las partes de las que depende (se vuelve a pintar cuando llega una); pintar da su contenido.
+  // filas: true = pintar da las filas enteras (el grupo «En línea» tiene una por servicio)
+  const GRUPOS = [
+    { titulo: "Identificación", filas: [
+      { etq: "SHA-256", deps: ["identificacion"], pintar: (f) => el("span", "huella", f.datos.identificacion.sha256) },
+      { etq: "SHA-1", deps: ["identificacion"], pintar: (f) => el("span", "huella", f.datos.identificacion.sha1) },
+      { etq: "Tamaño", deps: ["identificacion"], pintar: (f) => tamano(f.datos.identificacion.bytes) },
+      { etq: "Tipo", deps: ["identificacion"], pintar: (f) => `${f.datos.identificacion.tipo}, según Magika` },
+      { etq: "Extensión", deps: ["identificacion"], pintar: (f) => {
+        const i = f.datos.identificacion;
+        return i.extension_engana ? el("span", "alarma", `AVISO: no corresponde al contenido (se esperaba ${i.extensiones_esperadas.map((e) => "." + e).join(", ")})`) : el("span", "limpio", "sin aviso");
+      } },
+      { etq: "Lista MalwareBazaar", deps: ["identificacion"], pintar: (f) => listaLocal(f.datos.identificacion.malwarebazaar, "lista del",
+        el("span", "alarma", "MALWARE CONOCIDO"), el("span", "limpio", "no figura como malware conocido")) },
+      // CIRCL (NSRL) recoge software publicado, no software seguro: EICAR figura porque venía en una distribución de Linux
+      { etq: "Lista CIRCL", deps: ["identificacion"], pintar: (f) => listaLocal(f.datos.identificacion.circl, "descargada el",
+        "software conocido; no garantiza que sea seguro (indicio: se equivoca 1 de cada 10.000)", "no figura como software conocido") },
+    ] },
+    { titulo: "En línea (solo sale la huella, nunca el fichero)", filas: [
+      { etq: "Servicios", deps: ["en_linea"], filas: true, pintar: (f) => {
+        const consultas = f.datos.en_linea;
+        if (consultas === null) return [fila("Servicios", apagado("omitido (sin red)"))];
+        return Object.entries(consultas).map(([servicio, r]) => fila(servicio, el("span", claseEstado(r.estado), r.detalle)));
+      } },
+    ] },
+    { titulo: "Análisis estático", filas: [
+      { etq: "Arquitectura", deps: ["pe"], pintar: soloPE((pe) => pe.arquitectura) },
+      // La fecha la escribe el compilador: no es prueba de nada
+      { etq: "Compilado", deps: ["pe"], pintar: soloPE((pe) => el("span", null, pe.compilado, " ", apagado("(lo escribe el compilador: puede ser falso)"))) },
+      { etq: "Firma", deps: ["pe", "firma"], pintar: soloPE(firma) },
+      { etq: "Suplantación", deps: ["pe", "firma", "suplantacion"], pintar: soloPE(suplantacion) },
+      { etq: "Defender", deps: ["defender"], pintar: (f) => {
+        const d = f.datos.defender;
+        return el("span", claseEstado(d.estado) || (d.estado === "sin amenazas" ? "limpio" : ""), d.estado + (d.detalle ? ` (${d.detalle})` : ""));
+      } },
+      { etq: "YARA", deps: ["yara"], pintar: (f) => yara(f.datos.yara) },
+      { etq: "EMBER2024", deps: ["ember"], pintar: (f) => herramienta(f.datos.ember, textoEmber) },
+      { etq: "Detect It Easy", deps: ["die"], pintar: (f) => herramienta(f.datos.die, textoDie) },
+      { etq: "Capacidades (capa)", deps: ["capa"], pintar: (f) => herramienta(f.datos.capa, capacidades) },
+      { etq: "Secciones", deps: ["pe"], pintar: soloPE(secciones) },
+      { etq: "Importaciones", deps: ["pe"], pintar: soloPE(importaciones) },
+    ] },
+  ];
+
+  // --- El resumen: las señales de alarma (contadas y nombradas), lo que no se pudo comprobar y EMBER2024. NUNCA un veredicto: llega al combinar las capas ---
+  function senales(f) {
+    const d = f.datos;
+    const alarmas = [];       // [nombre, detalle]
+    const sinComprobar = [];  // textos
+    const herr = (nombre, r) => {
+      if (r && r.estado !== "ok" && r.estado !== "no aplica") sinComprobar.push(`${nombre}: ${r.estado}${r.detalle ? ` (${r.detalle})` : ""}`);
+    };
+    // MalwareBazaar es una sola señal aunque la digan la lista local y la consulta en línea: es la misma base de datos
+    const enLinea = hay(f, "en_linea") ? d.en_linea : null;
+    const mbLocal = hay(f, "identificacion") ? d.identificacion.malwarebazaar : undefined;
+    const mbLinea = enLinea && enLinea.MalwareBazaar;
+    const dondeMB = [];
+    if (mbLocal && mbLocal[0]) dondeMB.push(`lista local del ${mbLocal[1]}`);
+    if (mbLinea && mbLinea.estado === "malware") dondeMB.push("consulta en línea");
+    if (dondeMB.length) alarmas.push(["MalwareBazaar", `malware conocido (${dondeMB.join(" y ")})`]);
+    if (mbLocal === null) sinComprobar.push("lista local de MalwareBazaar: no disponible");
+    if (hay(f, "identificacion") && d.identificacion.extension_engana) {
+      alarmas.push(["Extensión que engaña", `no corresponde al contenido (se esperaba ${d.identificacion.extensiones_esperadas.map((e) => "." + e).join(", ")})`]);
+    }
+    if (hay(f, "en_linea")) {
+      if (enLinea === null) sinComprobar.push("consulta en línea: omitida (sin red)");
+      else for (const [servicio, r] of Object.entries(enLinea)) {
+        if (r.estado === "malware") { if (servicio !== "MalwareBazaar") alarmas.push([servicio, r.detalle]); }  // CIRCL (KnownMalicious) y VirusTotal
+        else if (["sin clave", "límite", "error"].includes(r.estado)) sinComprobar.push(`${servicio}: ${r.estado}`);
+      }
+    }
+    if (hay(f, "defender")) {
+      const r = d.defender;
+      if (r.estado === "DETECTADO") alarmas.push(["Microsoft Defender", `DETECTADO${r.detalle ? ` (${r.detalle})` : ""}`]);
+      else if (r.estado !== "sin amenazas") herr("Defender", r);
+    }
+    if (hay(f, "yara")) {
+      if (d.yara === null) sinComprobar.push("YARA: reglas no disponibles");
+      else if (d.yara.length) alarmas.push(["YARA", `${plural(d.yara.length, "regla", "reglas")}: ${d.yara.map(([nombre]) => nombre).join(", ")}`]);
+    }
+    if (hay(f, "suplantacion") && d.suplantacion && d.suplantacion.length) alarmas.push(["Suplantación", d.suplantacion.join("; ")]);
+    if (hay(f, "pe", "firma") && d.pe !== null && d.firma === null) {
+      sinComprobar.push("firma y suplantación: sin verificar (el fichero está en memoria)");
+    }
+    if (hay(f, "ember")) herr("EMBER2024", d.ember);
+    if (hay(f, "die")) herr("Detect It Easy", d.die);
+    if (hay(f, "capa")) herr("capa", d.capa);
+    return { alarmas, sinComprobar };
+  }
+
+  function barraEmber(f) {
+    if (!hay(f, "ember")) return el("div", "ember-fila", "EMBER2024:", pendiente());
+    const r = f.datos.ember;
+    if (r.estado !== "ok") return el("div", "ember-fila", "EMBER2024:", herramienta(r, textoEmber));
+    const barra = el("div", "relleno");
+    barra.style.width = `${Math.round(Math.max(0, Math.min(1, r.puntuacion)) * 100)}%`;
+    return el("div", "ember-fila", "EMBER2024: 0", el("div", "pista-ember hundido", barra), "1",
+      el("strong", null, r.puntuacion.toFixed(2).replace(".", ",")), apagado("umbral sin calibrar hasta el hito 7"));
+  }
+
+  function resumenDe(f) {
+    const { alarmas, sinComprobar } = senales(f);
+    const faltan = partes.filter((p) => !f.llegadas.has(p));
+    return [
+      alarmas.length ? el("p", "titular alarma", `Señales de alarma: ${alarmas.length}`) : el("p", "titular limpio", "Ninguna señal de alarma en lo analizado"),
+      alarmas.length ? el("ul", "senales", ...alarmas.map(([nombre, detalle]) => el("li", null, el("strong", "alarma", `${nombre}: `), detalle))) : null,
+      sinComprobar.length ? el("p", "apagado", "No se pudo comprobar:") : null,
+      sinComprobar.length ? el("ul", "sin-comprobar apagado", ...sinComprobar.map((t) => el("li", null, t))) : null,
+      barraEmber(f),
+      faltan.length ? el("p", "apagado nota", `Aún pendiente…: ${faltan.map((p) => ETIQUETAS[p] || p).join(", ")}`) : null,
+      el("p", "nota", "Esto solo cuenta señales: Argos todavía no las combina para decidir (hito 7)."),
+    ];
+  }
+
+  // Una parte que no se pudo pintar (datos con otra forma de la esperada) no tira la página: se dice y el resto sigue
+  function seguro(pintar) {
+    try {
+      return pintar();
+    } catch (error) {
+      return [apagado("no se pudo mostrar (datos inesperados)")];
+    }
+  }
+  const nodos = (r) => [r].flat().map((x) => (x instanceof Node ? x : el("span", null, x)));
+
+  function contarSenales(f) {
+    try {
+      return senales(f).alarmas.length;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // --- Un fichero del análisis: su pestaña y su informe, que se rellena según llegan las partes ---
+  function nuevoFichero(indice, nombre) {
+    const f = { indice, nombre, datos: {}, llegadas: new Set(), bloques: [] };
+    const cajaResumen = el("div", "resumen-fichero");
+    f.bloques.push({ deps: null, repintar: () => cajaResumen.replaceChildren(...seguro(() => resumenDe(f).filter(Boolean))) });
+    const grupos = [el("fieldset", null, el("legend", null, "Resumen"), cajaResumen)];
+    for (const grupo of GRUPOS) {
+      const filas = el("div", "filas");
+      for (const especificacion of grupo.filas) {
+        const bloque = el("div", "bloque");
+        f.bloques.push({
+          deps: especificacion.deps,
+          repintar: () => {
+            if (!hay(f, ...especificacion.deps)) return bloque.replaceChildren(fila(especificacion.etq, pendiente()));
+            const hecho = seguro(() => nodos(especificacion.pintar(f)));
+            bloque.replaceChildren(...(especificacion.filas ? hecho : [fila(especificacion.etq, ...hecho)]));
+          },
+        });
+        filas.append(bloque);
+      }
+      grupos.push(el("fieldset", null, el("legend", null, grupo.titulo), filas));
+    }
+    f.panel = el("div", "informe-fichero", el("h3", "nombre-fichero", nombre), ...grupos);
+    f.pestana = el("button", "pestana", nombre);
+    f.pestana.type = "button";
+    f.pestana.setAttribute("role", "tab");
+    f.pestana.setAttribute("title", limpiar(nombre));
+    f.pestana.addEventListener("click", () => seleccionar(f));
+    for (const b of f.bloques) b.repintar();
+    return f;
+  }
+
+  function seleccionar(elegido) {
+    for (const f of ficheros) {
+      if (!f) continue;
+      f.panel.hidden = f !== elegido;
+      f.pestana.setAttribute("aria-selected", String(f === elegido));
+    }
+  }
+
+  function vaciarInforme(texto) {
+    ficheros = [];
+    enCurso = null;
+    pestanas.replaceChildren();
+    pestanas.hidden = true;
+    paneles.replaceChildren(el("p", "vacio apagado", texto));
+  }
+
+  function nombreDeFichero(indice, nombre) {
+    const f = nuevoFichero(indice, nombre);
+    if (!ficheros.some(Boolean)) paneles.replaceChildren();  // se quita el «preparando…»
+    ficheros[indice] = f;
+    paneles.append(f.panel);
+    // Un fichero suelto no lleva pestañas: no existen en la página hasta que llega el segundo
+    const todos = ficheros.filter(Boolean);
+    pestanas.replaceChildren(...(todos.length > 1 ? todos.map((x) => x.pestana) : []));
+    pestanas.hidden = todos.length < 2;
+    seleccionar(todos[0]);
+    if (partes.length) enCurso = { fichero: f, parte: partes[0], desde: Date.now() };
+    avance();
+  }
+
+  function parteHecha(indice, parte, valor) {
+    const f = ficheros[indice];
+    if (!f || !partes.includes(parte)) return;
+    f.datos[parte] = valor;
+    f.llegadas.add(parte);
+    for (const b of f.bloques) if (!b.deps || b.deps.includes(parte)) b.repintar();
+    const siguiente = partes[partes.indexOf(parte) + 1];
+    enCurso = siguiente ? { fichero: f, parte: siguiente, desde: Date.now() } : null;
+    avance();
+  }
+
+  // --- Progreso: la barra de bloques (partes hechas del fichero en curso) y lo que se está calculando con su cronómetro (capa tarda 1 o 2 minutos por ejecutable) ---
+  function avance() {
+    const f = ficheros.filter(Boolean).at(-1);
+    relleno.style.width = partes.length && f ? `${(100 * f.llegadas.size) / partes.length}%` : "0%";
     reloj();
   }
 
-  function cerrarEnCurso(clase, texto) {
-    if (!enCurso) return;
-    enCurso.item.classList.remove("en-curso");
-    enCurso.item.classList.add(clase);
-    enCurso.estado.textContent = texto;
-    enCurso = null;
+  function reloj() {
+    if (!temporizador) return;
+    if (!enCurso) { actividad.textContent = ficheros.some(Boolean) ? "Un momento…" : "Preparando el análisis…"; return; }
+    const s = Math.floor((Date.now() - enCurso.desde) / 1000);
+    actividad.textContent = limpiar(`Analizando ${enCurso.fichero.nombre}: ${ETIQUETAS[enCurso.parte] || enCurso.parte} — ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
   }
 
   function ocupado(si) {
     for (const control of [botonElegir, botonAnalizar, clave, sinRed]) control.disabled = si;
+    $("avance").hidden = !si;
+    document.body.classList.toggle("ocupado", si);
     if (si) {
       if (!temporizador) temporizador = setInterval(reloj, 1000);
     } else {
       clearInterval(temporizador);
       temporizador = null;
+      actividad.textContent = "";
     }
-  }
-
-  function bloqueFichero(indice, nombre) {
-    const caja = document.createElement("div");
-    caja.className = "fichero";
-    const titulo = document.createElement("h3");
-    titulo.className = "nombre-fichero";
-    titulo.textContent = nombre;
-    const lista = document.createElement("ul");
-    lista.className = "partes";
-    const f = { estados: {}, items: {} };
-    for (const parte of partes) {
-      const item = document.createElement("li");
-      const estado = document.createElement("span");
-      estado.className = "estado";
-      estado.textContent = "pendiente";
-      const etiqueta = document.createElement("span");
-      etiqueta.textContent = ETIQUETAS[parte] || parte;
-      item.append(estado, etiqueta);
-      lista.append(item);
-      f.estados[parte] = estado;
-      f.items[parte] = item;
-    }
-    caja.append(titulo, lista);
-    progreso.append(caja);
-    ficheros[indice] = f;
-    if (partes.length) marcarEnCurso(f.items[partes[0]], f.estados[partes[0]]);
-    caja.scrollIntoView({ block: "nearest" });
-  }
-
-  function parteHecha(indice, parte, valor) {
-    const f = ficheros[indice];
-    if (!f || !f.items[parte]) return;
-    // null = el motor no la calculó (la firma de un fichero que no es PE, la consulta en línea con «Sin red»...)
-    const estado = valor === null ? "hecha (no aplica)" : "hecha";
-    cerrarEnCurso("hecha", estado);
-    f.items[parte].classList.add("hecha");
-    f.estados[parte].textContent = estado;
-    const siguiente = partes[partes.indexOf(parte) + 1];
-    if (siguiente) marcarEnCurso(f.items[siguiente], f.estados[siguiente]);
   }
 
   // Lo que Python manda a la página: ventana.py llama a argos.recibir(mensaje) con el mensaje serializado en JSON (un dict con "tipo")
   const recibir = (m) => {
     switch (m.tipo) {
       case "elegido":
-        $("nombre").textContent = m.nombre;
+        $("nombre").textContent = limpiar(m.nombre);
         $("tamano").textContent = tamano(m.bytes);
         $("campo-clave").hidden = !m.es_zip;
         if (!m.es_zip) clave.value = "";
         $("elegido").hidden = false;
-        progreso.hidden = true;
-        progreso.textContent = "";
-        resumen.textContent = "";
-        aviso("");
+        vaciarInforme("Pulsa «Analizar» para ver el informe de este fichero.");
+        estadoBarra.textContent = "Listo";
+        ocultarAviso();
         break;
       case "rechazado":
-        aviso(m.texto, true);
-        break;
       case "aviso":
-        aviso(m.texto, false);
+        mostrarAviso(m.tipo, m.texto);
         break;
       case "inicio":
         partes = m.partes;
-        ficheros = [];
-        progreso.textContent = "";
-        progreso.hidden = false;
-        resumen.textContent = "";
-        aviso("");
+        vaciarInforme("Preparando el análisis…");
+        estadoBarra.textContent = "Analizando…";
+        ocultarAviso();
         ocupado(true);
+        avance();
         break;
       case "parte":
-        if (m.parte === "nombre") bloqueFichero(m.indice, m.valor);
+        if (m.parte === "nombre") nombreDeFichero(m.indice, m.valor);
         else parteHecha(m.indice, m.parte, m.valor);
         break;
       case "terminado": {
         ocupado(false);
-        const hechas = progreso.querySelectorAll("li.hecha").length;
-        resumen.textContent = `Terminado: ${m.ficheros === 1 ? "1 fichero analizado" : m.ficheros + " ficheros analizados"} (${hechas} partes hechas)`;
+        if (!ficheros.some(Boolean)) paneles.replaceChildren(el("p", "vacio apagado", "No había ningún fichero que analizar."));
+        const cuentas = ficheros.filter(Boolean).map(contarSenales);
+        const total = cuentas.reduce((n, c) => n + (c || 0), 0);
+        estadoBarra.textContent = `Terminado: ${plural(m.ficheros, "fichero analizado", "ficheros analizados")}; ` +
+          (cuentas.includes(null) ? "no se pudieron contar las señales de alarma" : total ? plural(total, "señal de alarma", "señales de alarma") : "ninguna señal de alarma");
         break;
       }
       case "error":
-        cerrarEnCurso("interrumpida", "interrumpida");
+        enCurso = null;
         ocupado(false);
-        aviso(m.texto, true);
+        estadoBarra.textContent = "Análisis interrumpido";
+        mostrarAviso("error", m.texto);
         break;
     }
     return null;
@@ -305,9 +680,10 @@
   botonElegir.addEventListener("click", () => llamar("elegir"));
   botonAnalizar.addEventListener("click", async () => {
     const r = await llamar("analizar", clave.value, sinRed.checked);
-    if (!r || !r.ok) aviso((r && r.motivo) || "No se pudo analizar", true);
+    if (!r || !r.ok) mostrarAviso("rechazado", (r && r.motivo) || "No se pudo analizar");
   });
 
+  vaciarInforme("Elige o suelta un fichero para analizarlo: su informe aparecerá aquí.");
   // El puente (window.pywebview.api) no existe hasta que pywebview avisa con este evento
   window.addEventListener("pywebviewready", async () => {
     botonElegir.disabled = false;
