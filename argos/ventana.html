@@ -14,6 +14,10 @@
     --texto: #1b1f24;
     --suave: #5a6572;
     --borde: #8c97a5;
+    --acento: #1f6feb;
+    --sobre: #e3eefc;
+    --error: #b42318;
+    --hecha: #1a7f37;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -22,9 +26,14 @@
       --texto: #e7eaee;
       --suave: #9aa5b2;
       --borde: #546071;
+      --acento: #4c8dff;
+      --sobre: #1d2b42;
+      --error: #ff7b72;
+      --hecha: #56d364;
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { height: 100%; margin: 0; }
   body {
     display: flex;
@@ -36,18 +45,58 @@
     font-family: system-ui, sans-serif;
   }
   h1 { margin: 0 0 4px; font-size: 1.75rem; }
+  h3 { margin: 0 0 6px; font-size: 1rem; overflow-wrap: anywhere; }
   header p { margin: 0; color: var(--suave); }
+  main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 16px; overflow: auto; }
   #zona {
-    flex: 1;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: center;
+    gap: 10px;
+    padding: 28px 16px;
     border: 3px dashed var(--borde);
     border-radius: 12px;
     background: var(--zona);
     color: var(--suave);
     font-size: 1.25rem;
   }
+  #zona p { margin: 0; }
+  #zona.sobre { border-color: var(--acento); background: var(--sobre); color: var(--texto); }
+  button {
+    font: inherit;
+    padding: 8px 18px;
+    border: 1px solid var(--borde);
+    border-radius: 8px;
+    background: var(--zona);
+    color: var(--texto);
+    cursor: pointer;
+  }
+  button.principal { border-color: var(--acento); background: var(--acento); color: #fff; }
+  button:disabled, input:disabled { opacity: 0.5; cursor: not-allowed; }
+  #elegido { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--zona); }
+  #elegido p, #elegido label { margin: 0; }
+  #nombre { overflow-wrap: anywhere; }
+  #tamano, .ayuda { color: var(--suave); font-size: 0.9rem; }
+  #campo-clave { display: flex; flex-direction: column; gap: 4px; }
+  #clave { font: inherit; padding: 6px 8px; border: 1px solid var(--borde); border-radius: 6px; background: var(--fondo); color: var(--texto); max-width: 22rem; }
+  .interruptor { display: flex; align-items: center; gap: 8px; }
+  #acciones { display: flex; gap: 12px; }
+  #mensaje { margin: 0; min-height: 1.2em; color: var(--suave); }
+  #mensaje.error { color: var(--error); font-weight: 600; }
+  #progreso { display: flex; flex-direction: column; gap: 10px; }
+  .fichero { padding: 12px 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--zona); }
+  .partes { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+  .partes li { display: flex; gap: 10px; }
+  .estado { min-width: 10.5rem; color: var(--suave); }
+  .hecha .estado { color: var(--hecha); font-weight: 600; }
+  .interrumpida .estado { color: var(--error); font-weight: 600; }
+  .en-curso .estado { color: var(--acento); font-weight: 600; }
+  /* capa tarda 1 o 2 minutos por ejecutable: el parpadeo y el cronómetro enseñan que sigue trabajando */
+  @media (prefers-reduced-motion: no-preference) {
+    .en-curso .estado { animation: pulso 1.4s ease-in-out infinite; }
+    @keyframes pulso { 50% { opacity: 0.45; } }
+  }
+  #resumen { margin: 0; font-weight: 600; }
   footer { min-height: 1.2em; color: var(--suave); font-size: 0.85rem; }
 </style>
 </head>
@@ -56,14 +105,212 @@
   <h1>Argos</h1>
   <p>Analizador local de ficheros sospechosos: nada sale de tu equipo salvo las huellas</p>
 </header>
-<main id="zona">Arrastra aquí un fichero</main>
+<main>
+  <section id="zona">
+    <p>Arrastra aquí un fichero</p>
+    <p class="ayuda">o</p>
+    <button id="elegir" type="button" disabled>Elegir fichero</button>
+  </section>
+  <section id="elegido" hidden>
+    <p><strong id="nombre"></strong> <span id="tamano"></span></p>
+    <div id="campo-clave" hidden>
+      <label for="clave">Contraseña del zip</label>
+      <input id="clave" type="password" maxlength="256" autocomplete="off" spellcheck="false">
+      <span class="ayuda">Los zips de MalwareBazaar usan «infected». Vacía, se analiza el zip como un fichero más.</span>
+    </div>
+    <label class="interruptor"><input id="sinred" type="checkbox" role="switch"> Sin red (no consultar la huella en línea)</label>
+    <div id="acciones"><button id="analizar" class="principal" type="button">Analizar</button></div>
+  </section>
+  <p id="mensaje" role="status" aria-live="polite"></p>
+  <section id="progreso" hidden></section>
+  <p id="resumen"></p>
+</main>
 <footer id="pie">Versión: …</footer>
 <script nonce="__NONCE__">
   // Todo texto que cambie la página se pone con textContent (no interpreta HTML), nunca montando HTML: un nombre dentro de un zip o un dato de un servicio es del atacante
-  const pie = document.getElementById("pie");
+  const $ = (id) => document.getElementById(id);
+  const zona = $("zona"), pie = $("pie"), mensaje = $("mensaje"), progreso = $("progreso"), resumen = $("resumen");
+  const botonElegir = $("elegir"), botonAnalizar = $("analizar"), clave = $("clave"), sinRed = $("sinred");
+
+  const ETIQUETAS = {
+    identificacion: "Identificación (huellas y tipo)",
+    en_linea: "Consulta en línea de la huella",
+    pe: "Cabeceras PE",
+    firma: "Firma digital",
+    suplantacion: "Suplantación",
+    defender: "Microsoft Defender",
+    yara: "Reglas YARA",
+    ember: "EMBER2024 (puntuación)",
+    die: "Detect It Easy",
+    capa: "capa (capacidades, tarda 1-2 min)",
+  };
+  // Las partes de un fichero llegan en orden, así que la «en curso» es siempre la primera sin hacer
+  let partes = [];       // las partes en el orden en que llegan (las manda Python al empezar)
+  let ficheros = [];     // por índice (un fichero suelto o cada uno de un zip): { estados: {parte: <span>}, items: {parte: <li>} }
+  let enCurso = null;    // { item, estado, desde }
+  let temporizador = null;
+
+  function aviso(texto, esError) {
+    mensaje.textContent = texto;
+    mensaje.classList.toggle("error", Boolean(esError));
+  }
+
+  function tamano(bytes) {
+    const unidades = ["bytes", "KB", "MB", "GB"];
+    let n = bytes, i = 0;
+    while (n >= 1024 && i < unidades.length - 1) { n /= 1024; i++; }
+    const cifra = n.toLocaleString("es-ES", { maximumFractionDigits: i ? 1 : 0 });
+    return i ? `${cifra} ${unidades[i]} (${bytes.toLocaleString("es-ES")} bytes)` : `${cifra} bytes`;
+  }
+
+  function reloj() {
+    if (!enCurso) return;
+    const s = Math.floor((Date.now() - enCurso.desde) / 1000);
+    enCurso.estado.textContent = `en curso… ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }
+
+  function marcarEnCurso(item, estado) {
+    enCurso = { item, estado, desde: Date.now() };
+    item.classList.add("en-curso");
+    reloj();
+  }
+
+  function cerrarEnCurso(clase, texto) {
+    if (!enCurso) return;
+    enCurso.item.classList.remove("en-curso");
+    enCurso.item.classList.add(clase);
+    enCurso.estado.textContent = texto;
+    enCurso = null;
+  }
+
+  function ocupado(si) {
+    for (const control of [botonElegir, botonAnalizar, clave, sinRed]) control.disabled = si;
+    if (si) {
+      if (!temporizador) temporizador = setInterval(reloj, 1000);
+    } else {
+      clearInterval(temporizador);
+      temporizador = null;
+    }
+  }
+
+  function bloqueFichero(indice, nombre) {
+    const caja = document.createElement("div");
+    caja.className = "fichero";
+    const titulo = document.createElement("h3");
+    titulo.className = "nombre-fichero";
+    titulo.textContent = nombre;
+    const lista = document.createElement("ul");
+    lista.className = "partes";
+    const f = { estados: {}, items: {} };
+    for (const parte of partes) {
+      const item = document.createElement("li");
+      const estado = document.createElement("span");
+      estado.className = "estado";
+      estado.textContent = "pendiente";
+      const etiqueta = document.createElement("span");
+      etiqueta.textContent = ETIQUETAS[parte] || parte;
+      item.append(estado, etiqueta);
+      lista.append(item);
+      f.estados[parte] = estado;
+      f.items[parte] = item;
+    }
+    caja.append(titulo, lista);
+    progreso.append(caja);
+    ficheros[indice] = f;
+    if (partes.length) marcarEnCurso(f.items[partes[0]], f.estados[partes[0]]);
+    caja.scrollIntoView({ block: "nearest" });
+  }
+
+  function parteHecha(indice, parte, valor) {
+    const f = ficheros[indice];
+    if (!f || !f.items[parte]) return;
+    // null = el motor no la calculó (la firma de un fichero que no es PE, la consulta en línea con «Sin red»...)
+    const estado = valor === null ? "hecha (no aplica)" : "hecha";
+    cerrarEnCurso("hecha", estado);
+    f.items[parte].classList.add("hecha");
+    f.estados[parte].textContent = estado;
+    const siguiente = partes[partes.indexOf(parte) + 1];
+    if (siguiente) marcarEnCurso(f.items[siguiente], f.estados[siguiente]);
+  }
+
+  // Lo que Python manda a la página: ventana.py llama a argos.recibir(mensaje) con el mensaje serializado en JSON (un dict con "tipo")
+  const recibir = (m) => {
+    switch (m.tipo) {
+      case "elegido":
+        $("nombre").textContent = m.nombre;
+        $("tamano").textContent = tamano(m.bytes);
+        $("campo-clave").hidden = !m.es_zip;
+        if (!m.es_zip) clave.value = "";
+        $("elegido").hidden = false;
+        progreso.hidden = true;
+        progreso.textContent = "";
+        resumen.textContent = "";
+        aviso("");
+        break;
+      case "rechazado":
+        aviso(m.texto, true);
+        break;
+      case "aviso":
+        aviso(m.texto, false);
+        break;
+      case "inicio":
+        partes = m.partes;
+        ficheros = [];
+        progreso.textContent = "";
+        progreso.hidden = false;
+        resumen.textContent = "";
+        aviso("");
+        ocupado(true);
+        break;
+      case "parte":
+        if (m.parte === "nombre") bloqueFichero(m.indice, m.valor);
+        else parteHecha(m.indice, m.parte, m.valor);
+        break;
+      case "terminado": {
+        ocupado(false);
+        const hechas = progreso.querySelectorAll("li.hecha").length;
+        resumen.textContent = `Terminado: ${m.ficheros === 1 ? "1 fichero analizado" : m.ficheros + " ficheros analizados"} (${hechas} partes hechas)`;
+        break;
+      }
+      case "error":
+        cerrarEnCurso("interrumpida", "interrumpida");
+        ocupado(false);
+        aviso(m.texto, true);
+        break;
+    }
+    return null;
+  };
+  window.argos = Object.freeze({ recibir });
+
+  // Hay que cancelar lo que el navegador haría por su cuenta con un fichero soltado (abrirlo en la vista, y con él la página y su CSP). La ruta del fichero
+  // la recoge Python, no esta página (ventana.py, Puente._soltar): aquí solo se resalta la zona
+  for (const tipo of ["dragenter", "dragover", "dragleave", "drop"]) {
+    window.addEventListener(tipo, (e) => e.preventDefault());
+  }
+  const traeFicheros = (e) => Array.from((e.dataTransfer && e.dataTransfer.types) || []).includes("Files");
+  let profundidad = 0;  // dragenter y dragleave también saltan al pasar por los hijos de la zona
+  zona.addEventListener("dragenter", (e) => { if (traeFicheros(e)) { profundidad++; zona.classList.add("sobre"); } });
+  zona.addEventListener("dragover", (e) => { if (e.dataTransfer) e.dataTransfer.dropEffect = "copy"; });
+  zona.addEventListener("dragleave", () => { profundidad = Math.max(0, profundidad - 1); if (!profundidad) zona.classList.remove("sobre"); });
+  zona.addEventListener("drop", () => { profundidad = 0; zona.classList.remove("sobre"); });
+
+  // La página no manda ninguna ruta: elegir() abre el diálogo de Windows desde Python y analizar() analiza el fichero que Python ya tiene elegido
+  async function llamar(nombre, ...argumentos) {
+    try {
+      return await window.pywebview.api[nombre](...argumentos);
+    } catch (error) {
+      return { ok: false, motivo: "No se pudo hablar con Argos" };
+    }
+  }
+  botonElegir.addEventListener("click", () => llamar("elegir"));
+  botonAnalizar.addEventListener("click", async () => {
+    const r = await llamar("analizar", clave.value, sinRed.checked);
+    if (!r || !r.ok) aviso((r && r.motivo) || "No se pudo analizar", true);
+  });
 
   // El puente (window.pywebview.api) no existe hasta que pywebview avisa con este evento
   window.addEventListener("pywebviewready", async () => {
+    botonElegir.disabled = false;
     try {
       pie.textContent = "Versión " + await window.pywebview.api.version();
     } catch (error) {
