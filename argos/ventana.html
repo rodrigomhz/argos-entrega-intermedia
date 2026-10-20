@@ -12,7 +12,7 @@
      style.width: la CSP no bloquea el CSSOM, solo el atributo style="..." */
   :root {
     color-scheme: light; /* Windows XP no tenía modo oscuro */
-    --marco: #0831d9;
+    --marco: #0831d9; /* solo el borde del cuadro de mensaje */
     --beige: #ece9d8;
     --grupo: #f6f5ef;
     --borde-grupo: #d0d0bf;
@@ -36,52 +36,25 @@
   html, body { height: 100%; margin: 0; }
   body {
     display: flex;
-    padding: clamp(8px, 2.4vw, 28px);
+    padding: 0; /* la app es todo el interior de la ventana: sin escritorio, sin marco y sin barra de título de adorno */
     color: #000;
     font: 12px/1.4 var(--fuente);
     cursor: default;
-    /* El escritorio: de arriba abajo, nubes, cielo y dos lomas de pradera. Solo degradados (nada de la foto de Windows: tiene derechos) */
-    background:
-      radial-gradient(ellipse 22% 7% at 22% 17%, rgba(255, 255, 255, .6), transparent),
-      radial-gradient(ellipse 16% 5% at 74% 11%, rgba(255, 255, 255, .5), transparent),
-      radial-gradient(ellipse 75% 36% at 12% 104%, #6cc247 0 96%, transparent 100%),
-      radial-gradient(ellipse 85% 30% at 92% 108%, #3f9a2b 0 96%, transparent 100%),
-      linear-gradient(#2f6fd6 0%, #77aef0 50%, #a9cdf3 66%, #5fa840 67%, #3d8a2a 100%);
+    background: var(--beige);
   }
   body.ocupado { cursor: progress; } /* el reloj de arena, mientras capa trabaja */
   ::selection { background: var(--seleccion); color: #fff; }
   p { margin: 0; }
 
-  /* La ventana de dentro de la página: marco azul de 3 px, esquinas de arriba redondeadas y la barra de título encima del marco. El marco de verdad es el de Windows 11 */
+  /* La app ocupa todo el interior de la ventana; el marco de verdad es el de Windows 11 */
   .ventana {
-    position: relative;
     flex: 1;
     min-width: 0;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    border: 3px solid var(--marco);
-    border-top: 0;
-    border-radius: 8px 8px 0 0;
     background: var(--beige);
-    background-clip: padding-box;
-    box-shadow: 2px 3px 12px rgba(0, 0, 0, .45);
   }
-  .titulo {
-    flex: none;
-    display: flex;
-    align-items: center;
-    height: 30px;
-    margin: 0 -3px; /* tapa el marco de los lados: la barra va de borde a borde */
-    padding: 0 6px 0 10px;
-    border-radius: 8px 8px 0 0;
-    color: #fff;
-    font: 700 13px var(--fuente-titulo);
-    text-shadow: 1px 1px #0f1089;
-    background: var(--azul-titulo);
-    user-select: none;
-  }
-  .titulo h1 { flex: 1; min-width: 0; margin: 0; overflow: hidden; font: inherit; white-space: nowrap; text-overflow: ellipsis; }
   .interior { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .cuerpo { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 10px 12px 6px; overflow: auto; }
 
@@ -305,10 +278,6 @@
 </head>
 <body>
 <div class="ventana" id="ventana">
-  <!-- La barra de título es solo decorativa: el marco de verdad es el de Windows 11 -->
-  <div class="titulo">
-    <h1>Argos — Analizador local de ficheros sospechosos</h1>
-  </div>
   <div class="interior">
     <div class="cuerpo">
       <div id="zona">

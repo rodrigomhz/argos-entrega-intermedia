@@ -199,14 +199,13 @@ try:
         assert prohibido not in html, prohibido
     assert not re.search(r"\b(?:src|href)=|@import|url\(", html), "la página no carga ficheros externos"
     assert html.count("<script") == 1 and html.count("<style") == 1, "un solo script y un solo estilo"
-    # Windows XP (Luna): los colores de la paleta, las fuentes y la barra de título (que es solo decorativa: ningún botón dentro, y sus tres botones, de adorno)
-    for color in ("#0831d9", "#ece9d8", "#d0d0bf", "#f6f5ef", "#0046d5", "#003c74", "#f8b33a", "#7f9db9", "#2bd23a", "#fff7d6", "#e5c365", "#c00", "#2a7d1e", "#808080",
+    # Windows XP (Luna): los colores de la paleta y las fuentes; la app ocupa todo el interior, sin barra de título ni fondo de escritorio de adorno
+    for color in ("#ece9d8", "#d0d0bf", "#f6f5ef", "#0046d5", "#003c74", "#f8b33a", "#7f9db9", "#2bd23a", "#fff7d6", "#e5c365", "#c00", "#2a7d1e", "#808080",
                   "#0997ff", "Tahoma", '"Segoe UI"', '"Trebuchet MS"'):
         assert color in html, color
-    for resto in ("#008080", "#c0c0c0", "#000080", "Microsoft Sans Serif", "Windows 95", "Bliss", "bliss"):  # nada del estilo anterior ni de la foto de Windows
+    for resto in ("#c0c0c0", "#000080", "#008080", "#4d8ae0", "Microsoft Sans Serif", "Windows 95", "Bliss", "bliss", "#5fa840"):  # nada del estilo anterior, del teal, del azul de fondo, de la pradera ni de la foto de Windows
         assert resto not in html, resto
-    titulo = re.search(r'<div class="titulo">(.*?)</div>', html, re.S).group(1)
-    assert "<h1>Argos — Analizador local de ficheros sospechosos</h1>" in titulo and "<button" not in titulo and "<span" not in titulo, titulo
+    assert 'class="titulo"' not in html and "<h1>" not in html  # sin barra de título falsa: el marco es el de Windows 11
     assert html.count('role="alertdialog"') == 1 and html.count('id="aviso-aceptar"') == 1  # un único cuadro de mensaje, dentro de la página
     # La entropía alta es la de la terminal: una sola definición en Python, la misma en la página
     assert float(re.search(r"const ENTROPIA_ALTA = ([\d.]+);", html).group(1)) == estatico.ENTROPIA_ALTA
