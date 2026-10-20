@@ -206,8 +206,7 @@ try:
     for resto in ("#008080", "#c0c0c0", "#000080", "Microsoft Sans Serif", "Windows 95", "Bliss", "bliss"):  # nada del estilo anterior ni de la foto de Windows
         assert resto not in html, resto
     titulo = re.search(r'<div class="titulo">(.*?)</div>', html, re.S).group(1)
-    assert "<h1>Argos — Analizador local de ficheros sospechosos</h1>" in titulo and "<button" not in titulo, titulo
-    assert re.findall(r'<span class="bt( cerrar)?" aria-hidden="true">(.)</span>', titulo) == [("", "_"), ("", "□"), (" cerrar", "×")], titulo
+    assert "<h1>Argos — Analizador local de ficheros sospechosos</h1>" in titulo and "<button" not in titulo and "<span" not in titulo, titulo
     assert html.count('role="alertdialog"') == 1 and html.count('id="aviso-aceptar"') == 1  # un único cuadro de mensaje, dentro de la página
     # La entropía alta es la de la terminal: una sola definición en Python, la misma en la página
     assert float(re.search(r"const ENTROPIA_ALTA = ([\d.]+);", html).group(1)) == estatico.ENTROPIA_ALTA

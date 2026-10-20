@@ -82,22 +82,6 @@
     user-select: none;
   }
   .titulo h1 { flex: 1; min-width: 0; margin: 0; overflow: hidden; font: inherit; white-space: nowrap; text-overflow: ellipsis; }
-  /* _ □ × solo de adorno: no son botones y no hacen nada */
-  .bt {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 21px;
-    height: 21px;
-    margin-left: 2px;
-    border: 1px solid #fff;
-    border-radius: 3px;
-    font: 700 12px/1 Tahoma, sans-serif;
-    text-shadow: none;
-    background: linear-gradient(#3c81f3, #2463d6);
-  }
-  .bt.cerrar { background: linear-gradient(#e67256, #c73b1c); }
   .interior { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .cuerpo { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 10px 12px 6px; overflow: auto; }
 
@@ -321,10 +305,9 @@
 </head>
 <body>
 <div class="ventana" id="ventana">
-  <!-- La barra de título es solo decorativa: ni los tres botones son botones ni hacen nada. El marco de verdad es el de Windows 11 -->
+  <!-- La barra de título es solo decorativa: el marco de verdad es el de Windows 11 -->
   <div class="titulo">
     <h1>Argos — Analizador local de ficheros sospechosos</h1>
-    <span class="bt" aria-hidden="true">_</span><span class="bt" aria-hidden="true">□</span><span class="bt cerrar" aria-hidden="true">×</span>
   </div>
   <div class="interior">
     <div class="cuerpo">
