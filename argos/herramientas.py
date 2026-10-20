@@ -2,6 +2,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 CARPETA = Path.home() / "argos-datos" / "herramientas"
@@ -29,20 +30,47 @@ def datos_capa():
     return (reglas, firmas) if reglas.is_dir() and firmas.is_dir() else None
 
 
+# Los procesos que _lanzar tiene en marcha. Cerrar la ventana a medias de un análisis los corta con cortar(): sin eso capa seguiría hasta su tiempo máximo (180 s)
+_en_marcha = set()
+_cortado = False  # tras cortar() no se lanza nada más: el hilo del análisis seguiría con la herramienta siguiente (capa después de DIE) con la ventana ya cerrada
+_cerrojo = threading.Lock()  # protege _en_marcha y _cortado, y hace que «mirar _cortado y arrancar» no se cruce con cortar()
+
+
+def _matar(proceso):
+    # /T mata también a los procesos hijos: el python.exe de un venv de Windows es un lanzador que arranca al intérprete real como hijo
+    # (medido), y matar solo al lanzador dejaría a capa corriendo
+    subprocess.run(["taskkill", "/F", "/T", "/PID", str(proceso.pid)], capture_output=True)
+
+
+def cortar():
+    """Mata los procesos en marcha y no deja lanzar más (OSError). Es irreversible a propósito: se llama al cerrar la ventana y el proceso de Argos termina justo después."""
+    global _cortado
+    with _cerrojo:  # matar con el cerrojo cogido: _lanzar saca el proceso de _en_marcha con él, así que no se mata un PID que ya terminó (y podría ser de otro)
+        _cortado = True
+        for proceso in _en_marcha:
+            _matar(proceso)
+
+
 def _lanzar(orden, espera):
     """(código de salida, salida, errores) de la orden (lista: programa y argumentos), como proceso aparte y sin shell. TimeoutExpired si tarda más de espera."""
-    with subprocess.Popen(
-        orden,  # lista y sin shell: la ruta del fichero va como argumento suelto y un nombre raro no puede colar órdenes
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
-    ) as proceso:
+    with _cerrojo:
+        if _cortado:
+            raise OSError("Argos se está cerrando")
+        proceso = subprocess.Popen(
+            orden,  # lista y sin shell: la ruta del fichero va como argumento suelto y un nombre raro no puede colar órdenes
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+        )
+        _en_marcha.add(proceso)
+    with proceso:
         try:
             salida, errores = proceso.communicate(timeout=espera)
         except subprocess.TimeoutExpired:
-            # /T mata también a los procesos hijos: el python.exe de un venv de Windows es un lanzador que arranca al intérprete real como hijo
-            # (medido), y matar solo al lanzador dejaría a capa corriendo
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proceso.pid)], capture_output=True)
+            _matar(proceso)
             proceso.communicate()
             raise
+        finally:
+            with _cerrojo:
+                _en_marcha.discard(proceso)
         return proceso.returncode, salida, errores
 
 

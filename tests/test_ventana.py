@@ -1,13 +1,16 @@
 # Se lanza con: python tests/test_ventana.py (la parte 4 abre de verdad la ventana, oculta, unos segundos: necesita el WebView2 de Windows. No usa la red ni toca tu argos-datos;
 # el motor de análisis se sustituye por uno falso salvo para la contraseña mala de un zip de prueba, y el soltar se simula con lo que hace pywebview al recibir de WebView2
-# los ficheros soltados, porque un arrastre de verdad no se puede hacer desde un test.
+# los ficheros soltados, porque un arrastre de verdad no se puede hacer desde un test. La parte 5 lanza un Python aparte donde pywebview cree que no hay WebView2.
+# Nunca se abre un cuadro de mensaje ni un diálogo de verdad: aviso_nativo se sustituye siempre.
 # Las líneas «[pywebview] Function ... does not exist» que salen son lo esperado: pywebview rechazando los mensajes de la página hostil)
 import json
 import logging
+import logging.handlers
 import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -20,8 +23,9 @@ from unittest import mock
 import pyzipper
 import webview
 from webview.dom import _dnd_state
+from webview.event import Event
 
-from argos import __version__, actualiza, analisis, estatico, ventana
+from argos import __version__, actualiza, analisis, enlinea, estatico, herramientas, ventana
 
 LIMITE = 180  # segundos para toda la prueba de humo: si WebView2 no arranca o se cuelga, se corta con un error en vez de quedarse esperando
 HOSTIL = "a\"b'c</script><script>window.__xss=1</script>\n\u2028x\\n&amp;<img src=x onerror=window.__xss=2>"  # un nombre de un zip puede traer cualquier cosa
@@ -174,6 +178,7 @@ class Registro(logging.Handler):
 errores = Registro()
 errores.setFormatter(logging.Formatter("%(levelname)s %(message)s"))  # con exc_info, format() añade la traza
 logging.getLogger("argos").addHandler(errores)
+registro = ventana.registro
 
 try:
     # 1. El puente: la versión, y de público solo lo que la página puede llamar (un método «_privado» o nuevo sin pensar sería una puerta más desde la página)
@@ -435,6 +440,140 @@ try:
     assert vistos == [False], vistos
     assert [m.get("estado") for m in w3.mensajes()] == ["comprobando", "descargando", "progreso", "hecho", "fin"]
 
+    # 3q. sin_trazas: un fallo del método (o unos argumentos que no encajan) llega a la página como rechazo genérico, y la traza al registro
+    class Ejemplo:
+        def uno(self, a, b=0):
+            return {"ok": True, "a": a}
+
+        def roto(self):
+            raise KeyError("detalle-interno-secreto")
+
+        def tipo_interno(self):
+            return len(None)  # un TypeError que NO es de argumentos
+
+    ejemplo = Ejemplo()
+    uno, roto, tipo_interno = (ventana.sin_trazas(m) for m in (ejemplo.uno, ejemplo.roto, ejemplo.tipo_interno))
+    assert (uno.__name__, roto.__name__) == ("uno", "roto")  # pywebview nombra la función de JS con __name__
+    assert uno(1) == {"ok": True, "a": 1} and uno(1, 2) == {"ok": True, "a": 1}
+    sobra = {"ok": False, "motivo": "Argumentos no válidos"}
+    errores.lineas.clear()
+    for args in ((), (1, 2, 3), ("clave-secreta-de-un-zip", 2, 3, 4, 5), (ventana._NO_LISTA,)):
+        assert uno(*args) == sobra, args
+    assert roto(1) == sobra and roto() == {"ok": False, "motivo": "Error inesperado"}
+    assert tipo_interno() == {"ok": False, "motivo": "Error inesperado"}  # un TypeError de dentro no se hace pasar por uno de argumentos
+    assert len(errores.lineas) == 7 and all("Traceback" in linea for linea in errores.lineas), errores.lineas  # la traza, entera, al registro
+    assert any("detalle-interno-secreto" in linea for linea in errores.lineas) and not any("clave-secreta-de-un-zip" in linea for linea in errores.lineas)  # ni un valor
+    errores.lineas.clear()
+
+    # 3r. solo_listas: unos parámetros que no son una lista (null, un número, un texto, un dict) llegan al método como un argumento que no encaja
+    recibidos_bridge = []
+    falso_bridge = lambda window, func_name, param, value_id: recibidos_bridge.append((func_name, param))
+    filtrada = ventana.solo_listas(falso_bridge)
+    ventana_bridge = SimpleNamespace(_functions={"version": None})
+    for param in ([], [1, 2], None, 5, "abc", {"a": 1}):
+        filtrada(ventana_bridge, "version", param, "id")
+    filtrada(ventana_bridge, "desconocida", None, "id")  # lo que no es un método expuesto no se toca: pywebview lo rechaza («does not exist»)
+    assert recibidos_bridge == [("version", []), ("version", [1, 2])] + [("version", [ventana._NO_LISTA])] * 4 + [("desconocida", None)], recibidos_bridge
+    assert filtrada.__wrapped__ is falso_bridge
+
+    # 3s. configurar_registro: el fichero (rotativo, con fecha, nivel y traza), el logger de pywebview, las excepciones sin capturar de cualquier hilo y NINGUNA clave
+    carpeta_log = tmp / "log"
+    nivel_antes, ganchos_antes = registro.level, (sys.excepthook, threading.excepthook)
+    manejadores_antes = {nombre: list(logging.getLogger(nombre).handlers) for nombre in ("argos", "pywebview")}
+    claves = {"ARGOS_ABUSECH_KEY": "abuse-clave-falsa-0123456789", "ARGOS_VT_KEY": "vt-clave-falsa-9876543210"}
+    sys.excepthook, threading.excepthook = (lambda *args: None), (lambda args: None)  # lo "anterior": para que la prueba no escriba trazas a la terminal
+    try:
+        with mock.patch.object(ventana, "REGISTRO", carpeta_log / "argos-ventana.log"), mock.patch.dict(os.environ, claves):
+            manejador = ventana.configurar_registro()
+            assert isinstance(manejador, logging.handlers.RotatingFileHandler) and (manejador.maxBytes, manejador.backupCount) == (1_000_000, 3)
+            registro.info("información de prueba")
+            registro.error("falló con la clave %s", claves["ARGOS_VT_KEY"])
+            try:
+                raise OSError(f"HTTP con {claves['ARGOS_ABUSECH_KEY']}")
+            except OSError:
+                registro.exception("traza con la clave %s", claves["ARGOS_ABUSECH_KEY"])
+            logging.getLogger("pywebview").error("WebView2 initialization failed: prueba")
+
+            def revienta():
+                raise ValueError("fallo-en-un-hilo")
+
+            hilo = threading.Thread(target=revienta, name="hilo-de-prueba")
+            hilo.start()
+            hilo.join()
+            try:
+                raise RuntimeError("fallo-sin-capturar")
+            except RuntimeError:
+                sys.excepthook(*sys.exc_info())  # lo que haría el intérprete con una excepción que nadie captura en el hilo principal
+            hilo_salida = threading.Thread(target=lambda: sys.exit(0), name="hilo-que-sale")  # SystemExit en un hilo no es un fallo
+            hilo_salida.start()
+            hilo_salida.join()
+            manejador.flush()
+            texto_log = (carpeta_log / "argos-ventana.log").read_text(encoding="utf-8")
+        assert re.search(r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} INFO argos \[MainThread\] información de prueba$", texto_log, re.M), texto_log
+        assert "ERROR argos" in texto_log and "Traceback (most recent call last)" in texto_log and "OSError: HTTP con" in texto_log, texto_log
+        assert "ERROR pywebview" in texto_log and "WebView2 initialization failed" in texto_log, texto_log
+        assert "CRITICAL argos [hilo-de-prueba] excepción sin capturar en el hilo hilo-de-prueba" in texto_log and "ValueError: fallo-en-un-hilo" in texto_log, texto_log
+        assert "excepción sin capturar\nTraceback" in texto_log and "RuntimeError: fallo-sin-capturar" in texto_log and "hilo-que-sale" not in texto_log, texto_log
+        assert not any(clave in texto_log for clave in claves.values()) and texto_log.count("***") == 3, texto_log  # ninguna clave (ni en el mensaje ni en el texto de la excepción), y se nota dónde estaba
+        # Sin sitio donde escribir: no revienta, devuelve None y no toca nada más
+        with mock.patch.object(ventana, "REGISTRO", carpeta_log / "argos-ventana.log" / "dentro"):  # «dentro» de un fichero
+            ganchos_ahora = (sys.excepthook, threading.excepthook)
+            assert ventana.configurar_registro() is None and (sys.excepthook, threading.excepthook) == ganchos_ahora
+    finally:
+        manejador.close()
+        for nombre, antes in manejadores_antes.items():
+            logging.getLogger(nombre).handlers[:] = antes
+        registro.setLevel(nivel_antes)
+        sys.excepthook, threading.excepthook = ganchos_antes
+    errores.lineas.clear()
+
+    # 3t. main() sin WebView2: pywebview elige otro motor (MSHTML, sin CSP) → no se abre la ventana, se registra y sale el cuadro nativo (sustituido aquí)
+    def main_con(motor):
+        """Lo que hace main() cuando pywebview elige este motor, con webview.create_window/start sustituidos: (ventana, avisos, argumentos de start, cortar)."""
+        creadas, arranques, avisos = [], [], []
+
+        class VentanaDeMain(VentanaFalsa):
+            def __init__(self):
+                super().__init__()
+                self.events = SimpleNamespace(closed=Event(None), loaded=Event(None), initialized=Event(None, True))  # los de pywebview: should_lock en initialized
+                self.expuestas = []
+
+            def expose(self, *funciones):
+                self.expuestas = list(funciones)
+
+        def crear(*args, **kwargs):
+            creadas.append(VentanaDeMain())
+            return creadas[0]
+
+        def arrancar(func=None, **kwargs):  # lo que hace start(): lanza initialized con el motor y, si nadie aborta, muestra la ventana (aquí, el usuario la cierra)
+            arranques.append(kwargs)
+            if not creadas[0].events.initialized.set(motor):
+                creadas[0].events.closed.set()
+
+        with mock.patch.object(webview, "create_window", crear), mock.patch.object(webview, "start", arrancar), \
+                mock.patch.object(ventana, "aviso_nativo", lambda titulo, texto: avisos.append((titulo, texto))), \
+                mock.patch.object(ventana, "configurar_registro"), mock.patch.object(herramientas, "cortar") as cortar:
+            ventana.main()
+            limite = time.monotonic() + 5
+            while motor == "edgechromium" and not cortar.called and time.monotonic() < limite:  # events.closed corre el manejador en un hilo
+                time.sleep(0.05)
+        return creadas[0], avisos, arranques, cortar
+
+    for motor in ("mshtml", "cef"):
+        v, avisos, arranques, cortar = main_con(motor)
+        assert avisos == [("Argos", ventana.TEXTO_SIN_WEBVIEW2)], (motor, avisos)
+        assert ventana.URL_WEBVIEW2 == "https://developer.microsoft.com/microsoft-edge/webview2/" and ventana.URL_WEBVIEW2 in avisos[0][1] and "WebView2 Runtime" in avisos[0][1]
+        assert arranques == [{"gui": "edgechromium", "debug": False}], arranques  # gui: PYWEBVIEW_GUI del entorno no puede elegir otro motor
+        assert not v.events.loaded.is_set() and not cortar.called  # la página no se cargó, y no había nada que cortar
+        assert any("sin WebView2" in linea and motor in linea for linea in errores.lineas), errores.lineas
+        errores.lineas.clear()
+    v, avisos, arranques, cortar = main_con("edgechromium")
+    assert avisos == [] and cortar.called, (avisos, cortar.called)  # con WebView2 no hay aviso, y al cerrar la ventana se corta lo que haya en marcha
+    assert [f.__name__ for f in v.expuestas] == ["actualizar", "analizar", "elegir", "version"]  # sin_trazas conserva los nombres
+    assert v.expuestas[3]() == __version__ and v.expuestas[1](1, 2, 3) == sobra and v.expuestas[3](1) == sobra and v.expuestas[1]("x" * 300, True)["ok"] is False
+    assert hasattr(webview.util.js_bridge_call, "__wrapped__")  # main() parchea js_bridge_call (solo_listas) antes de start()
+    errores.lineas.clear()
+
     # 4. Prueba de humo real: la ventana de verdad (oculta), con el puente y la CSP dentro de WebView2, y lo que intentaría una página hostil
     resultado = {}
     privado = []  # un método «_privado» de mentira en Puente: si la página llega a llamarlo, aparece aquí
@@ -486,6 +625,18 @@ try:
         param = {"event": {"type": "drop", "dataTransfer": {"files": [{"name": os.path.basename(ruta)}]}}, "nodeId": nodo}
         en_bruto(w, "pywebviewEventHandler", json.dumps(param))
 
+    NO_VALIDO, SIN_FICHERO = "Argumentos no válidos", "No hay ningún fichero elegido"
+    # Lo que una página manda en bruto: (método, parámetros en JSON tal como los manda pywebview.stringify, motivo del rechazo). analizar con 0 o 1 argumentos SÍ encaja
+    # (tiene valores por defecto) y se rechaza por no haber fichero; nunca se llama bien a elegir (abriría el diálogo) ni a actualizar (iría a la red)
+    llamadas_raras = [
+        ("analizar", "[]", SIN_FICHERO), ("analizar", '["a"]', SIN_FICHERO), ("analizar", '["a",true,3]', NO_VALIDO), ("analizar", '["a",true,3,4,5]', NO_VALIDO),
+        ("version", "[1]", NO_VALIDO), ("version", "[1,2,3]", NO_VALIDO), ("elegir", "[1]", NO_VALIDO), ("actualizar", "[true,false]", NO_VALIDO),
+        ("actualizar", "[1,2,3]", NO_VALIDO),
+        # parámetros que ni siquiera son una lista: pywebview hace func(*param) y la excepción salta antes de entrar en el método
+        ("analizar", "null", NO_VALIDO), ("analizar", "5", NO_VALIDO), ("analizar", '"abc"', NO_VALIDO), ("analizar", '{"a":1}', NO_VALIDO),
+        ("version", "null", NO_VALIDO), ("version", "5", NO_VALIDO), ("elegir", "null", NO_VALIDO), ("actualizar", "7", NO_VALIDO),
+    ]
+
     def comprobar():
         w = webview.windows[0]
         try:
@@ -498,6 +649,16 @@ try:
                 time.sleep(0.2)
             resultado["api"] = w.evaluate_js("Object.keys(window.pywebview.api)")
             (puente,) = instancias
+            # El puente con mensajes en bruto que no encajan, antes de elegir nada: la página recibe un rechazo, nunca la traza (el callback hace lo que window.pywebview.api)
+            w.evaluate_js("""window.__r = {}; window.__llamar = (n, p, id) => {
+                window.pywebview._returnValuesCallbacks[n][id] = r => { window.__r[id] = r; };
+                window.chrome.webview.postMessage([n, p, id]); }; null""")
+            for i, (nombre, parametros, _) in enumerate(llamadas_raras):
+                w.evaluate_js(f"window.__llamar({json.dumps(nombre)}, {json.dumps(parametros)}, 'c{i}'); null")
+            w.evaluate_js("window.__llamar('version', '[]', 'version'); null")
+            esperar(w, f"Object.keys(window.__r).length === {len(llamadas_raras) + 1}")
+            resultado["raras"] = json.loads(w.evaluate_js("JSON.stringify(window.__r)"))
+            assert puente._elegido is None and not puente._ocupado and puente._hilo is None  # ninguna de ellas arrancó nada
             limite = time.monotonic() + 30
             while _dnd_state["num_listeners"] == 0 and time.monotonic() < limite:  # main() engancha el soltar cuando la página carga
                 time.sleep(0.2)
@@ -592,6 +753,15 @@ try:
                 w.evaluate_js("document.getElementById('analizar').click(); null")
                 assert bloqueado.wait(30)
                 esperar(w, "document.getElementById('actividad').textContent.includes('notepad.exe')")
+            # ...con un proceso de herramienta en marcha (un python que duerme 60 s, lanzado por la misma _lanzar que usa capa): cerrar la ventana tiene que matarlo
+            resultado["dormir"] = []
+            resultado["hilo_dormir"] = threading.Thread(
+                target=lambda: resultado["dormir"].append(herramientas._lanzar([sys.executable, "-c", "import time; time.sleep(60)"], 120)), daemon=True)
+            resultado["hilo_dormir"].start()
+            limite = time.monotonic() + 15
+            while not herramientas._en_marcha and time.monotonic() < limite:
+                time.sleep(0.05)
+            (resultado["dormir_proceso"],) = herramientas._en_marcha
 
             # Una página hostil manda el mensaje en bruto [nombre, parámetros en JSON, id] sin pasar por window.pywebview.api
             for nombre, parametros in (("_privado", "[]"), ("version.__globals__.update", '[{"__version__": "cambiada desde la página"}]'), ("_soltar", "[{}]"),
@@ -622,13 +792,19 @@ try:
         print(f"FALLO: la prueba de humo no terminó en {LIMITE} s (¿WebView2 no arranca?)", flush=True)
         os._exit(1)
 
+    # main() configura el registro (a un fichero de tmp, no al de argos-datos) y engancha las excepciones sin capturar: se guarda lo de antes para dejarlo como estaba
+    nivel_antes, ganchos_antes = registro.level, (sys.excepthook, threading.excepthook)
+    manejadores_antes = {nombre: list(logging.getLogger(nombre).handlers) for nombre in ("argos", "pywebview")}
+    CLAVES_FALSAS = {"ARGOS_ABUSECH_KEY": "abuse-clave-falsa-0123456789", "ARGOS_VT_KEY": "vt-clave-falsa-9876543210"}
     vigilante = threading.Timer(LIMITE, cortar)
     vigilante.start()
     try:
-        with mock.patch.object(ventana.Puente, "_privado", lambda self: privado.append("llamado"), create=True), mock.patch.object(ventana, "Puente", PuenteDeLaPrueba):
+        with mock.patch.object(ventana.Puente, "_privado", lambda self: privado.append("llamado"), create=True), mock.patch.object(ventana, "Puente", PuenteDeLaPrueba), \
+                mock.patch.object(ventana, "REGISTRO", tmp / "registro" / "argos-ventana.log"), mock.patch.dict(os.environ, CLAVES_FALSAS):
             ventana.main(comprobar, hidden=True)  # vuelve cuando comprobar() cierra la ventana
     finally:
         vigilante.cancel()
+    manejador_real = next(h for h in registro.handlers if h not in manejadores_antes["argos"])
 
     assert "error" not in resultado, resultado["error"]
     assert resultado["pie"] == f"Versión {__version__}", resultado  # el puente contestó desde dentro de la CSP
@@ -665,12 +841,70 @@ try:
     assert resultado["ejecutado"] is False and set(resultado["violaciones"]) == {"script-src-elem", "connect-src"}, resultado
     assert resultado["elegido_tras_hostil"] == notepad, resultado  # las llamadas en bruto a _soltar y _fijar no cambiaron nada
     assert resultado["sockets"] == [], resultado["sockets"]  # sin servidor HTTP
+    assert webview.renderer == "edgechromium"  # la ventana real corrió en WebView2, no en MSHTML
+    # El puente ante llamadas en bruto que no encajan: siempre un rechazo (sin isError, que es por donde pywebview manda la traza) y sin rutas del equipo
+    for i, (nombre, parametros, motivo) in enumerate(llamadas_raras):
+        respuesta = resultado["raras"][f"c{i}"]
+        assert list(respuesta) == ["value"] and json.loads(respuesta["value"]) == {"ok": False, "motivo": motivo}, (nombre, parametros, respuesta)
+        assert not re.search(r"Traceback|File \\|site-packages|venvs|\.py|[A-Za-z]:\\|Users|" + re.escape(Path.home().name), json.dumps(respuesta)), (nombre, parametros, respuesta)
+    assert json.loads(resultado["raras"]["version"]["value"]) == __version__ and "isError" not in resultado["raras"]["version"]  # y una llamada buena, en bruto, sigue contestando
+    # Cerrar es cerrar: el proceso de herramienta que había en marcha (como si fuera capa) murió con la ventana, y _lanzar volvió en segundos y no a los 60 s
+    resultado["hilo_dormir"].join(20)
+    assert not resultado["hilo_dormir"].is_alive() and resultado["dormir"] and resultado["dormir"][0][0] != 0, resultado["dormir"]
+    assert resultado["dormir_proceso"].poll() is not None and herramientas._en_marcha == set() and herramientas._cortado is True
+    herramientas._cortado = False
+    # El registro: existe, tiene la traza de las llamadas que no encajaban (no la página), el motor elegido y ninguna clave
+    texto_log = (tmp / "registro" / "argos-ventana.log").read_text(encoding="utf-8")
+    assert f"INFO argos [MainThread] Argos {__version__}: arranca la ventana" in texto_log and "pywebview eligió el motor edgechromium" in texto_log, texto_log
+    assert "la página llamó a analizar con argumentos que no encajan (5 posicionales)" in texto_log and "Traceback" in texto_log, texto_log
+    assert not any(clave in texto_log for clave in CLAVES_FALSAS.values()), texto_log
+    assert sys.excepthook is not ganchos_antes[0] and threading.excepthook is not ganchos_antes[1]  # main() enganchó las excepciones sin capturar
     # La ventana ya está cerrada y el análisis de notepad.exe sigue esperando al motor: soltarlo no puede petar ni colgar nada
     (puente_real,) = instancias
     assert puente_real._hilo.is_alive() and puente_real._ocupado
     bloqueo.set()
     puente_real._hilo.join(10)
-    assert not puente_real._hilo.is_alive() and not puente_real._ocupado and errores.lineas == [], errores.lineas
+    # (en errores quedan los INFO del arranque y los avisos de las llamadas que no encajaban; un ERROR o CRITICAL sería un fallo)
+    assert not puente_real._hilo.is_alive() and not puente_real._ocupado, errores.lineas
+    assert not [linea for linea in errores.lineas if not linea.startswith(("INFO ", "WARNING la página llamó a "))], errores.lineas
+    errores.lineas.clear()
+    manejador_real.close()
+    for nombre, antes in manejadores_antes.items():
+        logging.getLogger(nombre).handlers[:] = antes
+    registro.setLevel(nivel_antes)
+    sys.excepthook, threading.excepthook = ganchos_antes
+
+    # 5. Sin WebView2 de verdad (en un Python aparte): pywebview cree que falta .NET 4.6.2, elige MSHTML y Argos no abre la ventana ni carga la página
+    guion = tmp / "sin_webview2.py"
+    guion.write_text('''
+import json, sys, winreg
+from pathlib import Path
+
+# pywebview decide el motor al importar webview.platforms.winforms (_is_chromium): con un .NET anterior a 4.6.2 (Release 394802) lo da por no disponible
+consultar = winreg.QueryValueEx
+winreg.QueryValueEx = lambda clave, nombre: (0, winreg.REG_DWORD) if nombre == "Release" else consultar(clave, nombre)
+import webview.platforms.mshtml as mshtml
+mshtml._set_ie_mode = lambda: None  # lo que pywebview escribiría en HKCU al elegir MSHTML: aquí no se toca el registro
+import webview
+from argos import ventana
+
+ventana.REGISTRO = Path(sys.argv[1])
+avisos = []
+ventana.aviso_nativo = lambda titulo, texto: avisos.append([titulo, texto])  # nunca un cuadro de verdad
+ventana.main(hidden=True)
+w = webview.windows[0]
+print("RESULTADO" + json.dumps({"avisos": avisos, "renderer": webview.renderer, "formulario": w.native is not None, "cargada": w.events.loaded.is_set(), "mostrada": w.events.shown.is_set()}))
+''', encoding="utf-8")
+    sin_log = tmp / "sin_webview2.log"
+    r = subprocess.run([sys.executable, "-I", str(guion), str(sin_log)], capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, (r.returncode, r.stdout[-2000:], r.stderr[-2000:])
+    salida = json.loads(next(linea for linea in r.stdout.splitlines() if linea.startswith("RESULTADO"))[len("RESULTADO"):])
+    assert salida["renderer"] == "mshtml", salida  # el montaje es el bueno: pywebview eligió de verdad MSHTML...
+    assert salida["avisos"] == [["Argos", ventana.TEXTO_SIN_WEBVIEW2]], salida  # ...y Argos paró con el cuadro nativo
+    assert salida["formulario"] is False and salida["cargada"] is False and salida["mostrada"] is False, salida  # ni formulario, ni página, ni ventana
+    assert "MSHTML is deprecated" in r.stderr  # el aviso que pywebview daba solo, y que hasta ahora nadie veía
+    registro_sin = sin_log.read_text(encoding="utf-8")
+    assert "pywebview eligió el motor mshtml" in registro_sin and "sin WebView2 no se abre la ventana" in registro_sin, registro_sin
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

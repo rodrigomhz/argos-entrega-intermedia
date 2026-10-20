@@ -1,6 +1,7 @@
 # Se lanza con: python tests/test_aviso.py (no usa la red ni toca tu argos-datos: la comprobación, la actualización y la entrada del usuario son falsas)
 import io
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -129,6 +130,37 @@ actualiza.descargar(origen.as_uri(), destino, origen.stat().st_size, progreso=la
 assert destino.read_bytes() == origen.read_bytes()
 assert len(visto) >= 2 and visto[-1] == (origen.stat().st_size, origen.stat().st_size), visto
 assert [r for r, _ in visto] == sorted(r for r, _ in visto), visto
+
+# (f2) Una descarga que se interrumpe no deja .parte si el finally llega a correr (un fallo a medias), y si el proceso muere sin correrlo (cerrar la ventana en mitad de
+# «Actualizar»: el hilo es daemon y el intérprete termina sin deshacer nada) el .parte se queda, pero la siguiente descarga lo pisa y no estorba a nadie
+class Interrumpida(Exception):
+    pass
+
+
+def interrumpir(recibidos, total):
+    raise Interrumpida
+
+
+destino.unlink()
+try:
+    actualiza.descargar(origen.as_uri(), destino, origen.stat().st_size, progreso=interrumpir)
+    raise AssertionError("tenía que interrumpirse")
+except Interrumpida:
+    pass
+assert not destino.exists() and not destino.with_name(destino.name + ".parte").exists(), list(tmp_aviso.iterdir())  # el finally lo borró
+muere = tmp_aviso / "muere.py"
+muere.write_text("""import os, sys
+from pathlib import Path
+from argos import actualiza
+origen, destino = map(Path, sys.argv[1:])
+actualiza.descargar(origen.as_uri(), destino, origen.stat().st_size, progreso=lambda r, t: os._exit(7))  # _exit: el proceso muere sin correr ningún finally
+""", encoding="utf-8")
+muerto = subprocess.run([sys.executable, "-I", str(muere), str(origen), str(destino)], timeout=120)
+parte = destino.with_name(destino.name + ".parte")
+assert muerto.returncode == 7 and parte.is_file() and 0 < parte.stat().st_size < origen.stat().st_size and not destino.exists(), (muerto.returncode, list(tmp_aviso.iterdir()))
+parte.write_bytes(b"z" * (origen.stat().st_size + 1000))  # peor aún: un .parte viejo MÁS GRANDE que la descarga nueva (open «wb» lo trunca, no se queda con la cola)
+actualiza.descargar(origen.as_uri(), destino, origen.stat().st_size)
+assert destino.read_bytes() == origen.read_bytes() and not parte.exists(), list(tmp_aviso.iterdir())
 
 # (g) actualizar() con evento: las fases que pinta la ventana (descargando, progreso, hecho), sin red ni datos reales
 descargar_real = actualiza.descargar

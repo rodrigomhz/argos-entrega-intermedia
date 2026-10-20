@@ -5,8 +5,11 @@ import atexit
 import json
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
+import threading
+import time
 import zipfile
 from pathlib import Path
 
@@ -105,7 +108,45 @@ herramientas._lanzar = lanzar_falso((0, json.dumps(de_die), ""))
 assert herramientas.die(notepad)["detectado"]["empaquetador"] == ["UPX"] and ordenes == [["diec-falso.exe", "-j", notepad]], ordenes
 herramientas.ruta, herramientas._lanzar, herramientas.datos_capa = ruta_real, lanzar_real, datos_real
 
-# 2c. Un fichero que viene de un zip necesita copia en disco: con el envío automático de muestras activado (1 o 3) no se escribe NADA
+# 2b2. cortar(): cerrar la ventana corta lo que _lanzar tiene en marcha (un python inofensivo que duerme 60 s, como si fuera capa), con sus procesos hijos
+# (el python.exe de un venv es un lanzador que arranca al intérprete real como hijo), y a partir de ahí no se lanza nada más
+hijos_de = lambda pid: [int(p) for p in subprocess.run(
+    ["powershell", "-NoProfile", "-NonInteractive", "-Command", f"(Get-CimInstance Win32_Process -Filter 'ParentProcessId={pid}').ProcessId"],
+    capture_output=True, text=True, timeout=60).stdout.split()]
+vive = lambda pid: f'"{pid}"' in subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"], capture_output=True, text=True, timeout=30).stdout
+dormir = [sys.executable, "-c", "import time; time.sleep(60)"]
+assert herramientas._en_marcha == set() and herramientas._cortado is False
+salida_lanzar = []
+hilo_lanzar = threading.Thread(target=lambda: salida_lanzar.append(herramientas._lanzar(dormir, 120)), daemon=True)
+hilo_lanzar.start()
+limite = time.monotonic() + 15
+while not herramientas._en_marcha and time.monotonic() < limite:
+    time.sleep(0.05)
+(en_marcha,) = herramientas._en_marcha
+pids = [en_marcha.pid]
+while not hijos_de(en_marcha.pid) and time.monotonic() < limite:  # a los hijos les cuesta un poco aparecer
+    time.sleep(0.2)
+pids += hijos_de(en_marcha.pid)
+assert all(vive(pid) for pid in pids), pids
+inicio = time.monotonic()
+herramientas.cortar()
+hilo_lanzar.join(15)
+assert not hilo_lanzar.is_alive() and time.monotonic() - inicio < 15, "_lanzar no volvió tras cortar()"  # volvió mucho antes de los 60 s (y de los 120 de espera)
+assert salida_lanzar and salida_lanzar[0][0] != 0, salida_lanzar  # taskkill /F lo termina con código distinto de 0
+assert herramientas._en_marcha == set()
+assert not any(vive(pid) for pid in pids), [pid for pid in pids if vive(pid)]  # ni el lanzador ni su hijo
+try:
+    herramientas._lanzar(dormir, 5)
+    raise AssertionError("tras cortar() no debía lanzarse nada")
+except OSError as error:
+    assert "cerrando" in str(error), error
+assert herramientas._en_marcha == set()
+# y las herramientas lo cuentan como un fallo normal (el análisis que sigue vivo en su hilo termina rápido y sin lanzar nada)
+assert herramientas._correr("capa", dormir, lambda salida: {}) == {"estado": "error", "detalle": "no se pudo lanzar: Argos se está cerrando"}
+herramientas._cortado = False  # solo para que el resto de las pruebas puedan lanzar procesos
+print(f"cortar(): {len(pids)} procesos (lanzador e intérprete) muertos en {time.monotonic() - inicio:.1f} s")
+
+# 2c.Un fichero que viene de un zip necesita copia en disco: con el envío automático de muestras activado (1 o 3) no se escribe NADA
 # y capa y DIE lo dicen; si Defender bloquea la copia, también lo dicen en vez de fallar
 crear_carpeta = tempfile.TemporaryDirectory
 
