@@ -17,11 +17,13 @@ assert estatico.consentimiento_muestras() in (0, 1, 2, 3)
 
 # Se anota cada orden externa que se lanza, para saber si se ha ejecutado MpCmdRun
 lanzadas = []
+creadas = []
 lanzar = subprocess.run
 
 
 def espia(orden, *args, **kwargs):
     lanzadas.append(Path(orden[0]).name)
+    creadas.append(kwargs.get("creationflags"))
     return lanzar(orden, *args, **kwargs)
 
 
@@ -49,6 +51,7 @@ for valor in (0, 2):
     lanzadas.clear()
     assert estatico.defender(notepad)["estado"] == "sin amenazas"
     assert lanzadas == ["MpCmdRun.exe"]
+assert creadas and all(bandera == subprocess.CREATE_NO_WINDOW for bandera in creadas), creadas  # sin ventana de consola
 
 # MpCmdRun también devuelve 2 cuando falla (aquí, un fichero que no existe): eso no es una amenaza
 assert estatico.defender(r"C:\no\existe\argos.exe")["estado"] == "error"

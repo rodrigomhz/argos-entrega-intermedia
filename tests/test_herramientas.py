@@ -108,6 +108,23 @@ herramientas._lanzar = lanzar_falso((0, json.dumps(de_die), ""))
 assert herramientas.die(notepad)["detectado"]["empaquetador"] == ["UPX"] and ordenes == [["diec-falso.exe", "-j", notepad]], ordenes
 herramientas.ruta, herramientas._lanzar, herramientas.datos_capa = ruta_real, lanzar_real, datos_real
 
+# Los hijos de consola no abren ventana: _lanzar pasa CREATE_NO_WINDOW a Popen (la ventana de Argos es un .exe de GUI)
+popen_real = subprocess.Popen
+vistos_popen = {}
+
+
+def popen_espia(*args, **kwargs):
+    vistos_popen.update(kwargs)
+    return popen_real(*args, **kwargs)
+
+
+subprocess.Popen = popen_espia
+try:
+    assert herramientas._lanzar([sys.executable, "-c", "pass"], 30)[0] == 0
+finally:
+    subprocess.Popen = popen_real
+assert vistos_popen.get("creationflags") == subprocess.CREATE_NO_WINDOW, vistos_popen.get("creationflags")
+
 # 2b2. cortar(): cerrar la ventana corta lo que _lanzar tiene en marcha (un python inofensivo que duerme 60 s, como si fuera capa), con sus procesos hijos
 # (el python.exe de un venv es un lanzador que arranca al intérprete real como hijo), y a partir de ahí no se lanza nada más
 hijos_de = lambda pid: [int(p) for p in subprocess.run(

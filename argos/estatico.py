@@ -17,6 +17,8 @@ from argos import herramientas
 ARQUITECTURAS = {0x14C: "x86 (32 bits)", 0x8664: "x64 (64 bits)", 0xAA64: "ARM64"}
 # Por encima de esto, una sección parece comprimida o cifrada: indicio de empaquetado
 ENTROPIA_ALTA = 7.0
+# La ventana es un .exe de GUI (sin consola): los hijos de consola (PowerShell, MpCmdRun) no deben abrir una ventana negra
+SIN_VENTANA = subprocess.CREATE_NO_WINDOW
 # Palabras que no distinguen a un fabricante de otro: no cuentan al comparar nombres
 PALABRAS_GENERICAS = {
     "the", "corporation", "corp", "incorporated", "inc", "ltd", "limited", "llc", "gmbh",
@@ -129,7 +131,7 @@ def verificar_firma(ruta):
     )
     salida = subprocess.run(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", orden],
-        capture_output=True, text=True, env={**os.environ, "ARGOS_RUTA": str(ruta)}, check=True,
+        capture_output=True, text=True, env={**os.environ, "ARGOS_RUTA": str(ruta)}, check=True, creationflags=SIN_VENTANA,
     ).stdout
     firma = json.loads(salida)
     return {
@@ -194,7 +196,7 @@ def consentimiento_muestras():
     # ponytail: Get-MpPreference tarda ~3 s (arranca PowerShell y carga el módulo de Defender); mejorar: leer el valor del registro, respetando también la directiva de grupo
     salida = subprocess.run(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", "(Get-MpPreference).SubmitSamplesConsent"],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True, check=True, creationflags=SIN_VENTANA,
     ).stdout
     return int(salida)
 
@@ -219,7 +221,7 @@ def _escanear(ruta):
     # errors="replace": la salida va en la página de códigos de la consola y solo leemos su parte ASCII
     r = subprocess.run(
         [str(MPCMDRUN), "-Scan", "-ScanType", "3", "-File", os.path.abspath(ruta), "-DisableRemediation"],
-        capture_output=True, text=True, errors="replace",
+        capture_output=True, text=True, errors="replace", creationflags=SIN_VENTANA,
     )
     if r.returncode == 0:
         return {"estado": "sin amenazas", "detalle": ""}
@@ -254,7 +256,7 @@ def _amenaza_registrada(carpeta):
     )
     return subprocess.run(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", orden],
-        capture_output=True, text=True, env={**os.environ, "ARGOS_CARPETA": carpeta},
+        capture_output=True, text=True, env={**os.environ, "ARGOS_CARPETA": carpeta}, creationflags=SIN_VENTANA,
     ).stdout.strip()
 
 

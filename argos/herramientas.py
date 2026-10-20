@@ -6,6 +6,8 @@ import threading
 from pathlib import Path
 
 CARPETA = Path.home() / "argos-datos" / "herramientas"
+# La ventana es un .exe de GUI (sin consola): los hijos de consola (capa, DIE, taskkill) no deben abrir una ventana negra
+SIN_VENTANA = subprocess.CREATE_NO_WINDOW
 # Carpeta de cada herramienta descargada → su ejecutable: la baja «argos actualiza». capa no está: viene con Argos por pip y solo se bajan sus reglas y firmas (datos_capa)
 EJECUTABLES = {"die": "diec.exe"}
 # Segundos que se le deja a cada una antes de darla por colgada.
@@ -39,7 +41,7 @@ _cerrojo = threading.Lock()  # protege _en_marcha y _cortado, y hace que «mirar
 def _matar(proceso):
     # /T mata también a los procesos hijos: el python.exe de un venv de Windows es un lanzador que arranca al intérprete real como hijo
     # (medido), y matar solo al lanzador dejaría a capa corriendo
-    subprocess.run(["taskkill", "/F", "/T", "/PID", str(proceso.pid)], capture_output=True)
+    subprocess.run(["taskkill", "/F", "/T", "/PID", str(proceso.pid)], capture_output=True, creationflags=SIN_VENTANA)
 
 
 def cortar():
@@ -58,7 +60,7 @@ def _lanzar(orden, espera):
             raise OSError("Argos se está cerrando")
         proceso = subprocess.Popen(
             orden,  # lista y sin shell: la ruta del fichero va como argumento suelto y un nombre raro no puede colar órdenes
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", creationflags=SIN_VENTANA,
         )
         _en_marcha.add(proceso)
     with proceso:
