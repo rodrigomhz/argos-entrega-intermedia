@@ -27,6 +27,8 @@ from webview.event import Event
 
 from argos import __version__, actualiza, analisis, enlinea, estatico, herramientas, ventana
 
+# La CSP de la página, literal tal como estaba en bb0825e (con Windows 95): el estilo XP va con degradados CSS y no necesita nada más
+CSP = "default-src 'none'; script-src 'nonce-__NONCE__'; style-src 'nonce-__NONCE__'; connect-src 'none'; base-uri 'none'; form-action 'none'"
 LIMITE = 180  # segundos para toda la prueba de humo: si WebView2 no arranca o se cuelga, se corta con un error en vez de quedarse esperando
 HOSTIL = "a\"b'c</script><script>window.__xss=1</script>\n\u2028x\\n&amp;<img src=x onerror=window.__xss=2>"  # un nombre de un zip puede traer cualquier cosa
 EN_DISCO = "o'neil\u2028&amp;{{x}} $(calc) `x`.txt"  # lo más hostil que Windows deja en el nombre de un fichero (sin <>:"/\|?* ni controles)
@@ -188,6 +190,7 @@ try:
     # 2. La página: CSP cerrada y nada externo ni montado con HTML
     html = files("argos").joinpath("ventana.html").read_text(encoding="utf-8")
     csp = re.search(r'http-equiv="Content-Security-Policy" content="([^"]*)"', html).group(1)
+    assert csp == CSP, csp  # literal: el cambio de estilo (Windows 95 → XP) no tocó la política
     directivas = {d.split()[0]: d.split()[1:] for d in csp.split("; ")}
     assert directivas["default-src"] == ["'none'"] and directivas["connect-src"] == ["'none'"], csp
     assert "'unsafe-inline'" not in csp and "'unsafe-eval'" not in csp, csp  # los scripts y estilos propios van por nonce
@@ -196,10 +199,16 @@ try:
         assert prohibido not in html, prohibido
     assert not re.search(r"\b(?:src|href)=|@import|url\(", html), "la página no carga ficheros externos"
     assert html.count("<script") == 1 and html.count("<style") == 1, "un solo script y un solo estilo"
-    # Windows 95: los colores de la paleta, la fuente y el texto de la barra de título (que es solo decorativa: ningún botón dentro)
-    for color in ("#008080", "#c0c0c0", "#000080", "#1084d0", "#800000", "#008000", "#808080", "#ffffff", "#dfdfdf", "#0a0a0a", "Microsoft Sans Serif", "Tahoma"):
+    # Windows XP (Luna): los colores de la paleta, las fuentes y la barra de título (que es solo decorativa: ningún botón dentro, y sus tres botones, de adorno)
+    for color in ("#0831d9", "#ece9d8", "#d0d0bf", "#f6f5ef", "#0046d5", "#003c74", "#f8b33a", "#7f9db9", "#2bd23a", "#fff7d6", "#e5c365", "#c00", "#2a7d1e", "#808080",
+                  "#0997ff", "Tahoma", '"Segoe UI"', '"Trebuchet MS"'):
         assert color in html, color
-    assert "<h1 class=\"titulo\">Argos — Analizador local de ficheros sospechosos</h1>" in html
+    for resto in ("#008080", "#c0c0c0", "#000080", "Microsoft Sans Serif", "Windows 95", "Bliss", "bliss"):  # nada del estilo anterior ni de la foto de Windows
+        assert resto not in html, resto
+    titulo = re.search(r'<div class="titulo">(.*?)</div>', html, re.S).group(1)
+    assert "<h1>Argos — Analizador local de ficheros sospechosos</h1>" in titulo and "<button" not in titulo, titulo
+    assert re.findall(r'<span class="bt( cerrar)?" aria-hidden="true">(.)</span>', titulo) == [("", "_"), ("", "□"), (" cerrar", "×")], titulo
+    assert html.count('role="alertdialog"') == 1 and html.count('id="aviso-aceptar"') == 1  # un único cuadro de mensaje, dentro de la página
     # La entropía alta es la de la terminal: una sola definición en Python, la misma en la página
     assert float(re.search(r"const ENTROPIA_ALTA = ([\d.]+);", html).group(1)) == estatico.ENTROPIA_ALTA
     primera, segunda = ventana.pagina(), ventana.pagina()
@@ -667,11 +676,16 @@ try:
             w.evaluate_js("window.__v = []; document.addEventListener('securitypolicyviolation', e => window.__v.push(e.violatedDirective)); null")
             texto_de = lambda selector: w.evaluate_js(f"document.querySelector({json.dumps(selector)}).textContent")
 
-            # Soltar de mentira: la página manda un «drop» con una ruta que ella elige y WebView2 no entregó. No se fija nada y la banda de aviso lo dice
+            # Lo que enseña el cuadro de mensaje abierto: [título, clase (el tipo), id del elemento con el foco, ¿lo de detrás inert?, icono (el ::before de su círculo)]
+            cuadro = lambda: w.evaluate_js("""[document.getElementById('aviso-titulo').textContent, document.getElementById('aviso').className, document.activeElement.id,
+                [...document.querySelectorAll('.cuerpo, .estado-barra')].every(e => e.inert), getComputedStyle(document.querySelector('.cuadro-icono'), '::before').content]""")
+
+            # Soltar de mentira: la página manda un «drop» con una ruta que ella elige y WebView2 no entregó. No se fija nada y el cuadro de mensaje lo dice
             en_bruto(w, "pywebviewEventHandler", json.dumps({"event": {"type": "drop", "dataTransfer": {"files": [{"name": "x.txt", "pywebviewFullPath": notepad}]}}, "nodeId": nodo}))
             esperar(w, "document.getElementById('aviso').hidden === false")
             resultado["falso_aviso"] = w.evaluate_js("document.getElementById('aviso').hidden")
-            resultado["falso_texto"] = texto_de("#aviso")
+            resultado["falso_texto"] = texto_de("#aviso-texto")
+            resultado["falso_cuadro"] = cuadro()
             resultado["falso_elegido"] = puente._elegido
             resultado["falso_visible"] = w.evaluate_js("!document.getElementById('elegido').hidden")
 
@@ -679,6 +693,7 @@ try:
             entregar(en_disco)
             soltar_en_bruto(w, en_disco, nodo)
             esperar(w, "!document.getElementById('elegido').hidden")
+            resultado["cuadro_al_elegir"] = w.evaluate_js("[document.getElementById('aviso').hidden, document.querySelector('.cuerpo').inert]")  # elegir otro fichero lo cierra
             resultado["elegido"] = puente._elegido
             resultado["nombre_mostrado"] = texto_de("#nombre")
             resultado["tamano_mostrado"] = texto_de("#tamano")
@@ -701,8 +716,44 @@ try:
                 resultado[f"resumen_{nombre}"] = del_panel("p.querySelector('.resumen-fichero').textContent")
                 resultado[f"panel_{nombre}"] = del_panel("p.textContent")
                 resultado[f"ember_{nombre}"] = del_panel("p.querySelector('.pista-ember .relleno')?.style.width ?? null")
+                # El icono del aviso amarillo del resumen (el ::before de la caja), el titular (color y negrita) y los colores de estado que haya en el panel
+                resultado[f"icono_{nombre}"] = del_panel("getComputedStyle(p.querySelector('.resumen-fichero'), '::before').content")
+                resultado[f"titular_{nombre}"] = del_panel("(e => [getComputedStyle(e).color, getComputedStyle(e).fontWeight])(p.querySelector('.titular'))")
+                resultado[f"colores_{nombre}"] = del_panel("['alarma', 'limpio', 'apagado'].map(c => { const e = p.querySelector('.' + c); return e && getComputedStyle(e).color; })")
+                resultado[f"bloques_{nombre}"] = del_panel("(e => e && getComputedStyle(e).backgroundImage)(p.querySelector('.pista-ember .relleno'))")
+            estilo_pestana = "e => { const s = getComputedStyle(e); return [s.backgroundColor, s.boxShadow]; }"  # la última pestaña (la cuarta) es la que quedó abierta
+            resultado["pestana_activa"] = w.evaluate_js(f"({estilo_pestana})(document.querySelectorAll('.pestana')[3])")
+            resultado["pestana_inactiva"] = w.evaluate_js(f"({estilo_pestana})(document.querySelectorAll('.pestana')[0])")
             resultado["botones"] = w.evaluate_js("['elegir', 'actualizar', 'analizar', 'clave', 'sinred', 'sincircl'].map(id => document.getElementById(id).disabled)")
             resultado["progreso_oculto"] = w.evaluate_js("document.getElementById('avance').hidden")
+
+            # Pestañas con dos miembros de un zip, con los mensajes que mandaría Python (directo a la página): uno limpio y otro con hasta los ESTADOS hostiles
+            mandar = lambda mensaje: w.evaluate_js(f"argos.recibir({json.dumps(mensaje)}); null")
+            mandar({"tipo": "inicio", "partes": PARTES})
+            for indice, (nombre, informe) in enumerate((("uno.txt", notepad_falso()), (HOSTIL, hostil_falso(estados_hostiles=True)))):
+                mandar({"tipo": "parte", "indice": indice, "parte": "nombre", "valor": nombre})
+                for parte in PARTES:
+                    mandar({"tipo": "parte", "indice": indice, "parte": parte, "valor": informe[parte]})
+            mandar({"tipo": "terminado", "ficheros": 2})
+            pestanas_dos = "[...document.querySelectorAll('#pestanas .pestana')].map(e => [e.textContent, e.getAttribute('aria-selected')])"
+            resultado["dos_pestanas"] = w.evaluate_js(pestanas_dos)
+            resultado["dos_visible"] = del_panel("p.querySelector('.nombre-fichero').textContent")
+            w.evaluate_js("document.querySelectorAll('.pestana')[1].click(); null")
+            resultado["dos_tras_clic"] = w.evaluate_js(pestanas_dos)
+            resultado["dos_visible_tras_clic"] = del_panel("p.querySelector('.nombre-fichero').textContent")
+            resultado["dos_panel_hostil"] = del_panel("p.textContent")
+            resultado["dos_visibles"] = w.evaluate_js("document.querySelectorAll('.informe-fichero:not([hidden])').length")
+
+            # Los tres cuadros de mensaje (rechazado, aviso, error), con texto hostil: literal, con su icono, y se cierran con «Aceptar» y con Escape
+            resultado["cuadros"] = {}
+            for tipo in ("rechazado", "aviso", "error"):
+                mandar({"tipo": tipo, "texto": HOSTIL})
+                resultado["cuadros"][tipo] = [cuadro(), texto_de("#aviso-texto"), w.evaluate_js("document.getElementById('aviso').hidden")]
+                w.evaluate_js("document.getElementById('aviso-aceptar').click(); null")
+                resultado["cuadros"][tipo].append(w.evaluate_js("[document.getElementById('aviso').hidden, document.querySelector('.cuerpo').inert, document.querySelector('.estado-barra').inert, document.getElementById('aviso-texto').textContent]"))
+            mandar({"tipo": "aviso", "texto": "se cierra con Escape"})
+            w.evaluate_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'})); null")
+            resultado["cuadro_escape"] = w.evaluate_js("[document.getElementById('aviso').hidden, document.querySelector('.cuerpo').inert]")
             resultado["inyecciones"] = w.evaluate_js("[window.__xss, document.querySelectorAll('script').length, document.querySelectorAll('img').length]")
             resultado["motor"] = list(llamadas[-1])
 
@@ -740,8 +791,10 @@ try:
             resultado["clave_visible_zip"] = w.evaluate_js("!document.getElementById('campo-clave').hidden")
             w.evaluate_js("document.getElementById('clave').value = 'mala'; document.getElementById('analizar').click(); null")
             esperar(w, "document.getElementById('aviso').hidden === false")
-            resultado["error_texto"] = texto_de("#aviso")
+            resultado["error_texto"] = texto_de("#aviso-texto")
             resultado["error_tipo"] = w.evaluate_js("document.getElementById('aviso').className")
+            resultado["informe_tras_error"] = texto_de("#paneles")
+            resultado["error_cuadro"] = cuadro()
             resultado["botones_tras_error"] = w.evaluate_js("['elegir', 'actualizar', 'analizar', 'clave', 'sinred', 'sincircl'].map(id => document.getElementById(id).disabled)")
             resultado["violaciones_nuevas"] = w.evaluate_js("window.__v")
 
@@ -811,7 +864,9 @@ try:
     assert resultado["api"] == ["actualizar", "analizar", "elegir", "version"], resultado  # lo único que la página ve del puente
     assert privado == [] and ventana.__version__ == __version__, (privado, ventana.__version__)  # la página no llegó a nada más que a lo expuesto
     assert resultado["falso_elegido"] is None and resultado["falso_visible"] is False, resultado  # el drop de mentira no fijó nada
-    assert resultado["falso_aviso"] is False and "No se pudo leer la ruta" in resultado["falso_texto"], resultado  # el aviso va en la banda, no en un popup
+    assert resultado["falso_aviso"] is False and "No se pudo leer la ruta" in resultado["falso_texto"], resultado  # el aviso sale en el cuadro de mensaje de la página, no en un popup
+    assert resultado["falso_cuadro"] == ["Argos", "rechazado", "aviso-aceptar", True, '"!"'], resultado  # título, tipo, el foco en «Aceptar», lo de detrás inert y el icono de aviso
+    assert resultado["cuadro_al_elegir"] == [True, False], resultado  # elegir un fichero cierra el cuadro y lo de detrás deja de ser inert
     assert resultado["elegido"] == en_disco and resultado["nombre_mostrado"] == EN_DISCO, resultado  # el nombre llegó como dato: el literal
     assert resultado["tamano_mostrado"] == "10 bytes" and resultado["clave_visible"] is False, resultado
     assert resultado["resumen"] == "Terminado: 4 ficheros analizados; 10 señales de alarma", resultado
@@ -823,6 +878,15 @@ try:
     assert "válida" in resultado["panel_uno"] and "sin amenazas" in resultado["panel_uno"] and "sin coincidencias" in resultado["panel_uno"], resultado
     assert "Microsoft Visual C/C++" in resultado["panel_uno"] and ".text" in resultado["panel_uno"], resultado
     assert resultado["resumen_azorult"].startswith("Señales de alarma: 2"), resultado
+    # El aviso amarillo del resumen: icono verde «✓» sin señales y rojo «!» con ellas; el titular, #2a7d1e el limpio y #c00 en negrita el de alarma; y los bloques verdes #2bd23a de EMBER
+    assert (resultado["icono_uno"], resultado["icono_azorult"], resultado["icono_hostil"], resultado["icono_texto"]) == ('"✓"', '"!"', '"!"', '"!"'), resultado
+    assert resultado["titular_uno"] == ["rgb(42, 125, 30)", "700"] and resultado["titular_azorult"] == ["rgb(204, 0, 0)", "700"], resultado
+    assert resultado["colores_uno"] == [None, "rgb(42, 125, 30)", "rgb(128, 128, 128)"], resultado  # alarma, limpio, no comprobado
+    assert resultado["colores_azorult"] == ["rgb(204, 0, 0)", "rgb(42, 125, 30)", "rgb(128, 128, 128)"], resultado
+    assert "rgb(43, 210, 58)" in resultado["bloques_uno"] and "rgb(43, 210, 58)" in resultado["bloques_azorult"] and resultado["bloques_texto"] is None, resultado
+    assert "umbral sin calibrar hasta el hito 7" in resultado["resumen_uno"] and "umbral sin calibrar hasta el hito 7" in resultado["resumen_azorult"], resultado  # sin veredicto de EMBER
+    assert resultado["pestana_activa"][0] == "rgb(252, 252, 254)" and "rgb(248, 179, 58)" in resultado["pestana_activa"][1], resultado  # la activa, blanca y con la línea naranja arriba
+    assert resultado["pestana_inactiva"][0] != "rgb(252, 252, 254)" and resultado["pestana_inactiva"][1] == "none", resultado
     assert "MalwareBazaar" in resultado["resumen_azorult"] and "Microsoft Defender" in resultado["resumen_azorult"], resultado
     assert "0,93" in resultado["resumen_azorult"] and resultado["ember_azorult"] == "93%", resultado
     assert resultado["resumen_hostil"].startswith("Señales de alarma: 7") and "Esto solo cuenta señales" in resultado["resumen_hostil"], resultado
@@ -830,12 +894,23 @@ try:
     assert resultado["resumen_texto"].startswith("Señales de alarma: 1") and "Extensión que engaña" in resultado["resumen_texto"], resultado
     assert "no es un ejecutable de Windows" in resultado["panel_texto"] and resultado["ember_texto"] is None, resultado  # no-PE: ni EMBER ni estático
     assert resultado["botones"] == [False] * 6 and resultado["progreso_oculto"] is True, resultado  # al terminar se vuelve a poder todo
+    assert resultado["dos_pestanas"] == [["uno.txt", "true"], [HOSTIL, "false"]] and resultado["dos_visible"] == "uno.txt", resultado  # dos miembros: dos pestañas, la primera abierta
+    assert resultado["dos_tras_clic"] == [["uno.txt", "false"], [HOSTIL, "true"]] and resultado["dos_visible_tras_clic"] == HOSTIL and resultado["dos_visibles"] == 1, resultado
+    assert HOSTIL in resultado["dos_panel_hostil"], resultado  # con los estados también hostiles, el panel los enseña como texto
+    iconos = {"rechazado": ("Argos", '"!"'), "aviso": ("Argos", '"i"'), "error": ("Argos — Error", '"×"')}  # el título y el ::before del círculo de cada cuadro
+    for tipo, (titulo_cuadro, icono) in iconos.items():
+        abierto, texto_cuadro, oculto, cerrado = resultado["cuadros"][tipo]
+        assert abierto == [titulo_cuadro, tipo, "aviso-aceptar", True, icono] and texto_cuadro == HOSTIL and oculto is False, (tipo, resultado["cuadros"][tipo])
+        assert cerrado == [True, False, False, ""], (tipo, cerrado)  # «Aceptar» lo cierra, lo de detrás deja de ser inert y el texto se vacía
+    assert resultado["cuadro_escape"] == [True, False], resultado  # Escape también lo cierra
     assert resultado["inyecciones"] == [None, 1, 0], resultado  # ni el script ni la imagen del nombre hostil existen: solo el script de la página
     assert resultado["motor"] == [en_disco, None, True], resultado  # la ruta elegida por Python; sin clave (vacía) y con el interruptor de la página
     assert resultado["act_visible"] is True and resultado["act_texto"] == "CIRCL: 1 MB de 2 MB" and resultado["act_barra"] == "25%", resultado
     assert resultado["act_botones"] == [True] * 6 and resultado["act_sincircl"] == [False], resultado  # durante la actualización no se toca nada
     assert resultado["act_estado"] == "Actualización terminada" and resultado["act_botones_fin"] == [False] * 6, resultado
     assert resultado["clave_visible_zip"] is True and resultado["error_texto"] == "contraseña incorrecta" and resultado["error_tipo"] == "error", resultado
+    assert "Preparando" not in resultado["informe_tras_error"] and "No se pudo hacer el análisis" in resultado["informe_tras_error"], resultado
+    assert resultado["error_cuadro"] == ["Argos — Error", "error", "aviso-aceptar", True, '"×"'], resultado  # el error del motor de verdad, en el cuadro rojo
     assert resultado["botones_tras_error"] == [False] * 6, resultado
     assert resultado["violaciones_nuevas"] == [], resultado  # nada de lo anterior rozó la CSP
     assert resultado["ejecutado"] is False and set(resultado["violaciones"]) == {"script-src-elem", "connect-src"}, resultado

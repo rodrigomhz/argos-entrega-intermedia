@@ -7,26 +7,28 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-__NONCE__'; style-src 'nonce-__NONCE__'; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Argos</title>
 <style nonce="__NONCE__">
-  /* Windows 95 hecho a mano, sin librerías: las de este estilo traen fuentes e imágenes y la CSP las bloquearía. El relieve es todo box-shadow, los iconos son formas CSS y
-     las barras de bloques, un degradado. Lo que se mide en JS (el ancho de una barra) se pone con style.width: la CSP no bloquea el CSSOM, solo el atributo style="..." */
+  /* Estilo inspirado en Windows XP (tema azul «Luna») hecho a mano, sin librerías ni imágenes: la CSP no deja cargar nada, así que el cielo y la pradera del fondo son
+     degradados, los iconos son formas CSS (o caracteres Unicode) y las barras de bloques, un degradado repetido. Lo que se mide en JS (el ancho de una barra) se pone con
+     style.width: la CSP no bloquea el CSSOM, solo el atributo style="..." */
   :root {
-    color-scheme: light; /* Windows 95 no tenía modo oscuro */
-    --escritorio: #008080;
-    --gris: #c0c0c0;
-    --claro: #dfdfdf;
-    --blanco: #ffffff;
-    --sombra: #808080;
-    --negro: #0a0a0a;
-    --azul: #000080;
-    --azul-claro: #1084d0;
-    --alarma: #800000;
-    --limpio: #008000;
+    color-scheme: light; /* Windows XP no tenía modo oscuro */
+    --marco: #0831d9;
+    --beige: #ece9d8;
+    --grupo: #f6f5ef;
+    --borde-grupo: #d0d0bf;
+    --titulo-grupo: #0046d5;
+    --borde-boton: #003c74;
+    --resalte: #f8b33a; /* el naranja del ratón encima y de la pestaña activa */
+    --campo: #7f9db9;
+    --borde-pestana: #919b9c;
+    --bloque: #2bd23a;
+    --seleccion: #316ac5;
+    --alarma: #c00;
+    --limpio: #2a7d1e;
     --apagado: #808080;
-    /* claro arriba e izquierda, oscuro abajo y derecha: sube = botones y ventanas; baja = campos y listas; pulsado = un botón apretado */
-    --sube: inset -1px -1px var(--negro), inset 1px 1px var(--blanco), inset -2px -2px var(--sombra), inset 2px 2px var(--claro);
-    --baja: inset -1px -1px var(--blanco), inset 1px 1px var(--sombra), inset -2px -2px var(--claro), inset 2px 2px var(--negro);
-    --pulsado: inset -1px -1px var(--blanco), inset 1px 1px var(--negro), inset -2px -2px var(--claro), inset 2px 2px var(--sombra);
-    --fuente: "Microsoft Sans Serif", Tahoma, sans-serif;
+    --azul-titulo: linear-gradient(#0997ff 0%, #0053ee 10%, #0050ee 50%, #06f 90%, #0050ee 100%);
+    --fuente: Tahoma, "Segoe UI", sans-serif;
+    --fuente-titulo: "Trebuchet MS", Tahoma, sans-serif;
     --fija: "Lucida Console", "Courier New", monospace;
   }
   * { box-sizing: border-box; }
@@ -34,36 +36,74 @@
   html, body { height: 100%; margin: 0; }
   body {
     display: flex;
-    padding: clamp(4px, 1.2vw, 12px);
-    background: var(--escritorio);
+    padding: clamp(8px, 2.4vw, 28px);
     color: #000;
-    font: 13px/1.35 var(--fuente);
+    font: 12px/1.4 var(--fuente);
     cursor: default;
+    /* El escritorio: de arriba abajo, nubes, cielo y dos lomas de pradera. Solo degradados (nada de la foto de Windows: tiene derechos) */
+    background:
+      radial-gradient(ellipse 22% 7% at 22% 17%, rgba(255, 255, 255, .6), transparent),
+      radial-gradient(ellipse 16% 5% at 74% 11%, rgba(255, 255, 255, .5), transparent),
+      radial-gradient(ellipse 75% 36% at 12% 104%, #6cc247 0 96%, transparent 100%),
+      radial-gradient(ellipse 85% 30% at 92% 108%, #3f9a2b 0 96%, transparent 100%),
+      linear-gradient(#2f6fd6 0%, #77aef0 50%, #a9cdf3 66%, #5fa840 67%, #3d8a2a 100%);
   }
   body.ocupado { cursor: progress; } /* el reloj de arena, mientras capa trabaja */
-  ::selection { background: var(--azul); color: #fff; }
+  ::selection { background: var(--seleccion); color: #fff; }
   p { margin: 0; }
 
-  .ventana { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 3px; background: var(--gris); box-shadow: var(--sube); }
-  /* La barra de título es solo decorativa: el marco de verdad es el de Windows 11 */
+  /* La ventana de dentro de la página: marco azul de 3 px, esquinas de arriba redondeadas y la barra de título encima del marco. El marco de verdad es el de Windows 11 */
+  .ventana {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border: 3px solid var(--marco);
+    border-top: 0;
+    border-radius: 8px 8px 0 0;
+    background: var(--beige);
+    background-clip: padding-box;
+    box-shadow: 2px 3px 12px rgba(0, 0, 0, .45);
+  }
   .titulo {
-    margin: 0 0 3px;
-    padding: 3px 5px;
-    font-size: 13px;
-    font-weight: 700;
+    flex: none;
+    display: flex;
+    align-items: center;
+    height: 30px;
+    margin: 0 -3px; /* tapa el marco de los lados: la barra va de borde a borde */
+    padding: 0 6px 0 10px;
+    border-radius: 8px 8px 0 0;
     color: #fff;
-    background: linear-gradient(90deg, var(--azul), var(--azul-claro));
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font: 700 13px var(--fuente-titulo);
+    text-shadow: 1px 1px #0f1089;
+    background: var(--azul-titulo);
     user-select: none;
   }
-  .cuerpo { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 6px 4px 4px; overflow: auto; }
+  .titulo h1 { flex: 1; min-width: 0; margin: 0; overflow: hidden; font: inherit; white-space: nowrap; text-overflow: ellipsis; }
+  /* _ □ × solo de adorno: no son botones y no hacen nada */
+  .bt {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 21px;
+    height: 21px;
+    margin-left: 2px;
+    border: 1px solid #fff;
+    border-radius: 3px;
+    font: 700 12px/1 Tahoma, sans-serif;
+    text-shadow: none;
+    background: linear-gradient(#3c81f3, #2463d6);
+  }
+  .bt.cerrar { background: linear-gradient(#e67256, #c73b1c); }
+  .interior { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .cuerpo { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 10px 12px 6px; overflow: auto; }
 
-  fieldset { position: relative; margin: 0; min-width: 0; padding: 14px 10px 8px; border: 1px solid var(--sombra); box-shadow: inset 1px 1px var(--blanco), 1px 1px var(--blanco); }
-  /* El título del grupo, encima del borde y con el fondo del panel: como los group box de Windows 95 (y la línea no le pasa por encima) */
-  legend { position: absolute; top: -7px; left: 6px; padding: 0 3px; line-height: 13px; background: var(--gris); }
-  .hundido { background: #fff; box-shadow: var(--baja); }
+  fieldset { margin: 0; min-width: 0; padding: 8px 10px 10px; border: 1px solid var(--borde-grupo); border-radius: 4px; background: var(--grupo); }
+  legend { padding: 0 4px; color: var(--titulo-grupo); }
+  .hundido { background: #fff; border: 1px solid var(--campo); }
   .apagado { color: var(--apagado); }
   .alarma { color: var(--alarma); font-weight: 700; }
   .limpio { color: var(--limpio); }
@@ -72,112 +112,190 @@
     font: inherit;
     min-width: 75px;
     min-height: 23px;
-    margin: 1px;
-    padding: 2px 12px;
-    border: 0;
-    border-radius: 0;
+    padding: 3px 14px;
+    border: 1px solid var(--borde-boton);
+    border-radius: 3px;
     color: #000;
-    background: var(--gris);
-    box-shadow: var(--sube);
+    background: linear-gradient(#fff, #ecebe6 85%, #d6d0c5);
     cursor: inherit;
   }
-  button.principal { font-weight: 700; box-shadow: 0 0 0 1px #000, var(--sube); } /* el botón por defecto lleva un borde negro de más */
-  button:active:not(:disabled) { padding: 3px 11px 1px 13px; box-shadow: var(--pulsado); }
-  button.principal:active:not(:disabled) { box-shadow: 0 0 0 1px #000, var(--pulsado); }
-  button:focus-visible { outline: 1px dotted #000; outline-offset: -5px; }
-  button:disabled { color: var(--sombra); text-shadow: 1px 1px 0 #fff; }
+  button:hover:not(:disabled) { box-shadow: inset 0 0 0 1px #fff0cf, inset 0 0 0 2px var(--resalte); }
+  button:active:not(:disabled) { padding: 4px 13px 2px 15px; background: linear-gradient(#cdcac3, #e3e3db 20%, #e5e5de); box-shadow: inset 1px 1px 2px rgba(0, 0, 0, .3); }
+  button.principal { font-weight: 700; box-shadow: inset 0 0 0 2px #7ba2e7; } /* el botón por defecto lleva un borde azul por dentro */
+  button.principal:hover:not(:disabled) { box-shadow: inset 0 0 0 1px #fff0cf, inset 0 0 0 2px var(--resalte); }
+  button.principal:active:not(:disabled) { box-shadow: inset 1px 1px 2px rgba(0, 0, 0, .3); }
+  button:focus-visible { outline: 1px dotted #000; outline-offset: -4px; }
+  button:disabled { color: #acaa9f; border-color: #c9c7ba; background: #f4f4ee; box-shadow: none; }
   .botones { display: flex; flex-wrap: wrap; gap: 6px; }
-  input[type="password"] { font: inherit; width: 16em; max-width: 100%; padding: 3px 4px; border: 0; border-radius: 0; color: #000; background: #fff; box-shadow: var(--baja); }
-  input:disabled { color: var(--sombra); background: var(--gris); }
-  .ayuda { font-size: 12px; color: #404040; }
+  input[type="password"] { font: inherit; width: 16em; max-width: 100%; padding: 3px 5px; border: 1px solid var(--campo); border-radius: 0; color: #000; background: #fff; }
+  input[type="password"]:focus-visible { outline: 1px solid var(--seleccion); outline-offset: -2px; }
+  input:disabled { color: #acaa9f; background: #f4f4ee; border-color: #c9c7ba; }
+  .ayuda { color: #555; }
 
   /* La casilla se dibuja a mano: la marca es un par de bordes girados (sin imágenes) */
   .casilla { display: flex; align-items: center; gap: 6px; }
-  .casilla input { appearance: none; position: relative; flex: none; width: 13px; height: 13px; margin: 0; background: #fff; box-shadow: var(--baja); }
-  .casilla input:checked::after { content: ""; position: absolute; left: 4px; top: 0; width: 3px; height: 8px; border: solid #000; border-width: 0 2px 2px 0; transform: rotate(45deg); }
-  .casilla input:disabled { background: var(--gris); }
-  .casilla input:disabled:checked::after { border-color: var(--sombra); }
+  .casilla input { appearance: none; position: relative; flex: none; width: 13px; height: 13px; margin: 0; border: 1px solid #1c5180; border-radius: 2px; background: linear-gradient(135deg, #dcdcd7, #fff 80%); }
+  .casilla input:hover:not(:disabled) { box-shadow: inset 0 0 0 1px #f8c666; }
+  .casilla input:checked::after { content: ""; position: absolute; left: 3px; top: 0; width: 3px; height: 7px; border: solid #21a121; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .casilla input:disabled { border-color: #c9c7ba; background: #f4f4ee; }
+  .casilla input:disabled:checked::after { border-color: #acaa9f; }
   .casilla:has(input:focus-visible) span { outline: 1px dotted #000; }
 
-  /* Soltar o elegir */
-  #zona { display: flex; flex-direction: column; gap: 6px; }
-  #zona .soltar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .caja-soltar { flex: 1 1 14em; display: flex; align-items: center; justify-content: center; min-height: 29px; padding: 4px 10px; color: var(--sombra); }
-  #zona.sobre .caja-soltar { color: #fff; background: var(--azul); }
-  #elegido { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; border-top: 1px solid var(--sombra); box-shadow: inset 0 1px var(--blanco); }
-  #elegido p { margin: 0; }
+  /* Soltar o elegir: la zona entera (los dos grupos) recibe el soltar */
+  #zona { display: flex; flex-direction: column; gap: 10px; }
+  #zona .soltar { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+  .caja-soltar { flex: 1 1 14em; display: flex; align-items: center; justify-content: center; min-height: 34px; padding: 4px 10px; border: 1px dashed var(--campo); border-radius: 3px; background: #fff; color: #6d6d6d; }
+  #zona.sobre .caja-soltar { color: #fff; background: var(--seleccion); border-style: solid; border-color: var(--borde-boton); }
+  #elegido { display: flex; flex-direction: column; gap: 6px; }
   #nombre { overflow-wrap: anywhere; }
-  #tamano { color: #404040; }
+  #tamano { color: var(--apagado); }
+  .acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
   #campo-clave { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
-  #campo-clave .ayuda { flex-basis: 100%; }
-  .acciones { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; }
+  .acciones .botones { margin-left: auto; }
+  #elegido:has(#campo-clave[hidden]) .ayuda { display: none; }
 
-  /* Progreso del análisis y de la actualización: bloques azules como los de Windows 95 */
-  #avance, #actualizacion { display: flex; flex-direction: column; gap: 4px; }
-  .barra { height: 20px; padding: 3px; background: var(--gris); box-shadow: var(--baja); }
-  .relleno { height: 100%; width: 0; background: repeating-linear-gradient(90deg, var(--azul) 0 8px, transparent 8px 10px); }
-  #actividad { overflow-wrap: anywhere; }
+  /* Progreso del análisis y de la actualización: la barra de XP, bloques verdes separados dentro de un marco redondeado */
+  #avance, #actualizacion { display: flex; flex-direction: column; gap: 6px; }
+  .barra { height: 18px; padding: 2px; border: 1px solid #686868; border-radius: 3px; background: #fff; }
+  .relleno {
+    height: 100%;
+    width: 0;
+    border-radius: 2px;
+    background:
+      repeating-linear-gradient(90deg, transparent 0 8px, #fff 8px 10px),
+      linear-gradient(#b4f5ba 0%, var(--bloque) 45%, #1fb82e 60%, #62e06e 100%);
+  }
+  #actividad, #actividad-actualiza { overflow-wrap: anywhere; }
 
   /* El informe: pestañas (una por fichero de un zip) y, debajo, la página */
   #informe { flex: 1 0 14em; min-height: 0; display: flex; flex-direction: column; }
-  #pestanas { display: flex; flex-wrap: wrap; padding: 0 2px; }
-  .pestana {
+  #pestanas { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 2px; padding: 0 4px; }
+  button.pestana {
     min-width: 0;
     max-width: 16em;
     min-height: 0;
     margin: 2px 0 0;
-    padding: 3px 10px;
+    padding: 3px 12px 2px;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    box-shadow: inset -1px 0 var(--negro), inset 1px 1px var(--blanco), inset -2px 0 var(--sombra), inset 2px 2px var(--claro);
+    border: 1px solid var(--borde-pestana);
+    border-bottom: 0;
+    border-radius: 3px 3px 0 0;
+    background: linear-gradient(#fff, #f2f1ea 80%, #e6e3d6);
   }
-  .pestana:active:not(:disabled) { padding: 3px 10px; box-shadow: inset -1px 0 var(--negro), inset 1px 1px var(--blanco), inset -2px 0 var(--sombra), inset 2px 2px var(--claro); }
-  .pestana[aria-selected="true"] { position: relative; z-index: 1; margin: 0 0 -2px; padding: 5px 10px 5px; }
-  .pestana:focus-visible { outline-offset: -4px; }
-  #paneles { flex: 1; min-height: 0; overflow: auto; padding: 8px; box-shadow: var(--sube); }
+  button.pestana:hover:not(:disabled):not([aria-selected="true"]) { box-shadow: inset 0 2px 0 var(--resalte); }
+  button.pestana:active:not(:disabled):not([aria-selected="true"]) { padding: 3px 12px 2px; background: linear-gradient(#fff, #f2f1ea 80%, #e6e3d6); box-shadow: inset 0 2px 0 var(--resalte); }
+  button.pestana[aria-selected="true"] { margin: 0 0 -1px; padding: 5px 12px 4px; background: #fcfcfe; box-shadow: inset 0 3px 0 var(--resalte); }
+  button.pestana:focus-visible { outline-offset: -4px; }
+  #paneles { flex: 1; min-height: 0; overflow: auto; padding: 10px; border: 1px solid var(--borde-pestana); border-radius: 0 3px 3px 3px; background: linear-gradient(#fcfcfe, #f4f3ee); }
   .vacio { padding: 4px; }
-  .informe-fichero { display: flex; flex-direction: column; gap: 8px; }
-  .nombre-fichero { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+  .informe-fichero { display: flex; flex-direction: column; gap: 10px; }
+  .nombre-fichero { margin: 0; color: var(--titulo-grupo); font: 700 13px var(--fuente-titulo); overflow-wrap: anywhere; }
   .bloque { display: contents; }
   .filas { display: flex; flex-direction: column; gap: 3px; }
   .fila { display: grid; grid-template-columns: 11em minmax(0, 1fr); gap: 0 8px; }
-  .etq { overflow-wrap: anywhere; }
+  .etq { color: #333; overflow-wrap: anywhere; }
   .val { min-width: 0; overflow-wrap: anywhere; }
-  .huella { font: 12px/1.4 var(--fija); user-select: all; } /* un clic selecciona la huella entera: navigator.clipboard no existe en esta página (ver el script) */
-  .titular { font-weight: 700; }
+  .huella { font: 11px/1.4 var(--fija); user-select: all; } /* un clic selecciona la huella entera: navigator.clipboard no existe en esta página (ver el script) */
+
+  /* El resumen de señales: un aviso amarillo con un icono redondo. El icono es un ::before (así no entra en el texto de la caja) y su forma depende del titular de dentro:
+     rojo con «!» si hay señales, verde con «✓» si no, y gris con «?» si el resumen no se pudo pintar */
+  .resumen-fichero { display: flex; align-items: flex-start; gap: 14px; padding: 8px 10px; border: 1px solid #e5c365; border-radius: 4px; background: #fff7d6; }
+  .resumen-fichero::before {
+    content: "?";
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    color: #fff;
+    font: 700 18px/1 "Segoe UI Symbol", "Segoe UI", Tahoma, sans-serif;
+    background: radial-gradient(circle at 35% 28%, #c9c9c9, #808080 60%, #5c5c5c);
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .8), 0 1px 2px rgba(0, 0, 0, .4);
+  }
+  .resumen-fichero:has(.titular.alarma)::before { content: "!"; background: radial-gradient(circle at 35% 28%, #ff8a80, #d11 60%, #8c0000); }
+  .resumen-fichero:has(.titular.limpio)::before { content: "✓"; background: radial-gradient(circle at 35% 28%, #8ee37d, #2a9d1e 60%, #17690f); }
+  .resumen-texto { flex: 1; min-width: 0; }
+  .titular { font-size: 13px; font-weight: 700; }
   .senales, .sin-comprobar { margin: 2px 0; padding-left: 20px; }
-  .nota { margin-top: 6px; font-size: 12px; color: #404040; }
+  .nota { margin-top: 6px; color: #555; }
   .ember-fila { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin-top: 6px; }
-  .pista-ember { flex: 0 0 14em; height: 16px; padding: 2px; }
-  .pista-ember .relleno { background: repeating-linear-gradient(90deg, var(--azul) 0 6px, transparent 6px 8px); }
+  .pista-ember { flex: 0 0 14em; height: 16px; padding: 2px; border: 1px solid #686868; border-radius: 3px; }
+  .pista-ember .relleno { background: repeating-linear-gradient(90deg, transparent 0 6px, #fff 6px 8px), linear-gradient(#b4f5ba 0%, var(--bloque) 45%, #1fb82e 60%, #62e06e 100%); }
   .lista { max-height: 14em; margin: 3px 0 0; padding: 3px 6px; overflow: auto; list-style: none; }
   .lista li { overflow-wrap: anywhere; }
-  .tecnica { color: #404040; }
+  .tecnica { color: #555; }
   .tabla-caja { margin-top: 3px; overflow-x: auto; }
+  /* Como la vista de detalles del Explorador de XP: cabecera con degradado y separadores, filas sin rejilla */
   .tabla { border-collapse: collapse; width: 100%; }
-  .tabla th { padding: 1px 8px; font-weight: 400; text-align: left; background: var(--gris); box-shadow: var(--sube); }
-  .tabla td { padding: 1px 8px; white-space: nowrap; }
+  .tabla th { padding: 2px 8px; font-weight: 400; text-align: left; border-right: 1px solid #d6d2c2; border-bottom: 2px solid #d6d2c2; background: linear-gradient(#fff, #ebeadb); }
+  .tabla td { padding: 2px 8px; white-space: nowrap; }
   .tabla .der { text-align: right; }
   .tabla .alta { color: var(--alarma); font-weight: 700; }
   .funciones { padding: 2px 0 4px 17px; overflow-wrap: anywhere; }
   /* Plegables al estilo del explorador: un cuadrito con + o − */
   details > summary { display: flex; gap: 6px; align-items: center; list-style: none; }
   details > summary::-webkit-details-marker { display: none; }
-  details > summary::before { content: "+"; flex: none; width: 11px; height: 11px; font: 700 11px/9px var(--fija); text-align: center; background: #fff; border: 1px solid var(--sombra); }
+  details > summary::before {
+    content: "+";
+    flex: none;
+    width: 11px;
+    height: 11px;
+    border: 1px solid var(--borde-pestana);
+    border-radius: 2px;
+    font: 700 11px/9px var(--fija);
+    text-align: center;
+    background: linear-gradient(135deg, #fff, #dedbd0);
+  }
   details[open] > summary::before { content: "−"; }
   details > summary:focus-visible { outline: 1px dotted #000; }
   details .lista, details .tabla-caja { margin-left: 17px; }
 
-  /* La barra de estado de abajo: el resumen de una línea y la versión */
-  .estado-barra { display: flex; gap: 3px; margin-top: 3px; flex: none; }
-  .estado-barra > * { min-height: 21px; padding: 2px 6px; box-shadow: inset 1px 1px var(--sombra), inset -1px -1px var(--blanco); }
-  #resumen { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  /* La barra de estado de abajo: el resumen de una línea y la versión, con las divisiones en relieve */
+  .estado-barra { flex: none; display: flex; border-top: 1px solid #fff; box-shadow: 0 -1px #c5c2b2; }
+  .estado-barra > * { min-height: 22px; padding: 3px 8px; }
+  #resumen { flex: 1; min-width: 0; overflow-wrap: anywhere; border-right: 1px solid #c5c2b2; box-shadow: 1px 0 #fff; }
   #pie { flex: none; }
 
-  /* Los avisos van en una banda dentro de la página, no en un cuadro modal: no bloquean nada ni hay que cerrarlos */
-  #aviso { padding: 4px 8px; background: #ffffe1; box-shadow: var(--baja); }
-  #aviso.error { color: var(--alarma); font-weight: 700; }
+  /* Los avisos (rechazado, aviso y error) son un cuadro de mensaje de XP dentro de la página, no un diálogo del navegador: mientras está abierto el resto de la ventana no se puede tocar
+     (inert, lo pone el script) y hay que pulsar «Aceptar». El velo solo cubre debajo de la barra de título */
+  #aviso { position: absolute; z-index: 10; inset: 30px 0 0; display: flex; align-items: center; justify-content: center; padding: 12px; background: rgba(0, 0, 40, .12); }
+  .cuadro {
+    display: flex;
+    flex-direction: column;
+    width: min(380px, 100%);
+    max-height: 100%;
+    border: 3px solid var(--marco);
+    border-top: 0;
+    border-radius: 8px 8px 0 0;
+    background: var(--beige);
+    box-shadow: 2px 3px 12px rgba(0, 0, 0, .5);
+  }
+  .cuadro-titulo { flex: none; display: flex; align-items: center; height: 26px; margin: 0 -3px; padding: 0 8px; border-radius: 8px 8px 0 0; color: #fff; font: 700 12px var(--fuente-titulo); text-shadow: 1px 1px #0f1089; background: var(--azul-titulo); user-select: none; }
+  .cuadro-cuerpo { display: flex; align-items: center; gap: 14px; padding: 16px 16px 10px; overflow: auto; }
+  .cuadro-icono {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    color: #fff;
+    font: 700 22px/1 var(--fuente-titulo);
+    background: radial-gradient(circle at 35% 28%, #9bc8ff, #2a6fd6 58%, #0a3fa8);
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .85), 0 1px 2px rgba(0, 0, 0, .45);
+  }
+  .cuadro-icono::before { content: "i"; }
+  #aviso.rechazado .cuadro-icono { color: #5a3b00; background: radial-gradient(circle at 35% 28%, #fff1a6, #f2c400 58%, #c28a00); }
+  #aviso.rechazado .cuadro-icono::before { content: "!"; }
+  #aviso.error .cuadro-icono { background: radial-gradient(circle at 35% 28%, #ff9a8f, #d11 58%, #8c0000); }
+  #aviso.error .cuadro-icono::before { content: "×"; }
+  #aviso-texto { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .cuadro-botones { display: flex; justify-content: center; padding: 4px 16px 14px; }
 
   /* En una ventana baja (el mínimo es 560×420) el informe no cabe dentro de lo que queda debajo de los controles: se desplaza todo junto, como un documento */
   @media (max-height: 520px) {
@@ -186,60 +304,83 @@
     .ayuda { display: none; }
   }
 
-  /* Barras de desplazamiento al estilo Windows 95: el carril punteado, el cursor y los botones en relieve, y las flechas, un degradado */
+  /* Barras de desplazamiento al estilo Luna: el carril claro, el cursor y los botones en azul con las esquinas redondeadas, y las flechas, un degradado */
   ::-webkit-scrollbar { width: 16px; height: 16px; }
-  ::-webkit-scrollbar-track { background: conic-gradient(var(--gris) 25%, #fff 0 50%, var(--gris) 0 75%, #fff 0) 0 0 / 2px 2px; }
-  ::-webkit-scrollbar-thumb { background: var(--gris); box-shadow: var(--sube); }
-  ::-webkit-scrollbar-corner { background: var(--gris); }
-  ::-webkit-scrollbar-button:single-button { display: block; width: 16px; height: 16px; box-shadow: var(--sube); }
-  ::-webkit-scrollbar-button:single-button:vertical:decrement { background: conic-gradient(from 135deg at 50% 0, #000 90deg, transparent 0) 4px 5px / 8px 4px no-repeat, var(--gris); }
-  ::-webkit-scrollbar-button:single-button:vertical:increment { background: conic-gradient(from -45deg at 50% 100%, #000 90deg, transparent 0) 4px 6px / 8px 4px no-repeat, var(--gris); }
-  ::-webkit-scrollbar-button:single-button:horizontal:decrement { background: conic-gradient(from 45deg at 100% 50%, #000 90deg, transparent 0) 5px 4px / 4px 8px no-repeat, var(--gris); }
-  ::-webkit-scrollbar-button:single-button:horizontal:increment { background: conic-gradient(from 225deg at 0 50%, #000 90deg, transparent 0) 6px 4px / 4px 8px no-repeat, var(--gris); }
+  ::-webkit-scrollbar-track:vertical { background: linear-gradient(90deg, #f1efe2, #fcfcf9 50%, #f1efe2); }
+  ::-webkit-scrollbar-track:horizontal { background: linear-gradient(#f1efe2, #fcfcf9 50%, #f1efe2); }
+  ::-webkit-scrollbar-thumb { border: 1px solid #7f9cdc; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:vertical { background: linear-gradient(90deg, #cadafd, #b5c8f8 45%, #a3b9f1); }
+  ::-webkit-scrollbar-thumb:horizontal { background: linear-gradient(#cadafd, #b5c8f8 45%, #a3b9f1); }
+  ::-webkit-scrollbar-corner { background: var(--beige); }
+  ::-webkit-scrollbar-button:single-button { display: block; width: 16px; height: 16px; border: 1px solid #7f9cdc; border-radius: 3px; background-color: #c3d4fb; }
+  ::-webkit-scrollbar-button:single-button:vertical:decrement { background: conic-gradient(from 135deg at 50% 0, #4d6185 90deg, transparent 0) 3px 4px / 8px 4px no-repeat, linear-gradient(90deg, #cadafd, #a3b9f1); }
+  ::-webkit-scrollbar-button:single-button:vertical:increment { background: conic-gradient(from -45deg at 50% 100%, #4d6185 90deg, transparent 0) 3px 5px / 8px 4px no-repeat, linear-gradient(90deg, #cadafd, #a3b9f1); }
+  ::-webkit-scrollbar-button:single-button:horizontal:decrement { background: conic-gradient(from 45deg at 100% 50%, #4d6185 90deg, transparent 0) 4px 3px / 4px 8px no-repeat, linear-gradient(#cadafd, #a3b9f1); }
+  ::-webkit-scrollbar-button:single-button:horizontal:increment { background: conic-gradient(from 225deg at 0 50%, #4d6185 90deg, transparent 0) 5px 3px / 4px 8px no-repeat, linear-gradient(#cadafd, #a3b9f1); }
 </style>
 </head>
 <body>
 <div class="ventana" id="ventana">
-  <h1 class="titulo">Argos — Analizador local de ficheros sospechosos</h1>
-  <div class="cuerpo">
-    <fieldset id="zona">
-      <legend>Fichero</legend>
-      <div class="soltar">
-        <div class="caja-soltar hundido">Arrastra aquí un fichero</div>
-        <!-- Los botones de esta fila se alinean solos: otro botón (type="button") cabe aquí sin tocar el estilo -->
-        <div class="botones" id="botones-zona"><button id="elegir" type="button" disabled>Elegir fichero</button><button id="actualizar" type="button" disabled>Actualizar</button></div>
-        <label class="casilla"><input id="sincircl" type="checkbox"><span>Sin CIRCL (1 GB)</span></label>
-      </div>
-      <div id="elegido" hidden>
-        <p><strong id="nombre"></strong> <span id="tamano"></span></p>
-        <div id="campo-clave" hidden>
-          <label for="clave">Contraseña del zip:</label>
-          <input id="clave" type="password" maxlength="256" autocomplete="off" spellcheck="false">
-          <span class="ayuda">Los zips de MalwareBazaar usan «infected». Vacía, se analiza el zip como un fichero más.</span>
-        </div>
-        <div class="acciones">
-          <label class="casilla"><input id="sinred" type="checkbox" role="switch"><span>Sin red (no consultar la huella en línea)</span></label>
-          <div class="botones"><button id="analizar" class="principal" type="button">Analizar</button></div>
-        </div>
-      </div>
-    </fieldset>
-    <p id="aviso" hidden role="status"></p>
-    <div id="actualizacion" hidden>
-      <div class="barra" role="progressbar" aria-label="Progreso de la actualización"><div class="relleno" id="relleno-actualiza"></div></div>
-      <p id="actividad-actualiza"></p>
-    </div>
-    <div id="avance" hidden>
-      <div class="barra" role="progressbar" aria-label="Progreso del análisis"><div class="relleno" id="relleno"></div></div>
-      <p id="actividad"></p>
-    </div>
-    <section id="informe" aria-label="Informe">
-      <div id="pestanas" role="tablist" hidden></div>
-      <div id="paneles"></div>
-    </section>
+  <!-- La barra de título es solo decorativa: ni los tres botones son botones ni hacen nada. El marco de verdad es el de Windows 11 -->
+  <div class="titulo">
+    <h1>Argos — Analizador local de ficheros sospechosos</h1>
+    <span class="bt" aria-hidden="true">_</span><span class="bt" aria-hidden="true">□</span><span class="bt cerrar" aria-hidden="true">×</span>
   </div>
-  <div class="estado-barra">
-    <p id="resumen" role="status" aria-live="polite">Listo</p>
-    <p id="pie">Versión: …</p>
+  <div class="interior">
+    <div class="cuerpo">
+      <div id="zona">
+        <fieldset>
+          <legend>Fichero</legend>
+          <div class="soltar">
+            <div class="caja-soltar">Arrastra aquí un fichero</div>
+            <!-- Los botones de esta fila se alinean solos: otro botón (type="button") cabe aquí sin tocar el estilo -->
+            <div class="botones" id="botones-zona"><button id="elegir" type="button" disabled>Elegir fichero…</button><button id="actualizar" type="button" disabled>Actualizar</button></div>
+            <label class="casilla"><input id="sincircl" type="checkbox"><span>Sin CIRCL (1 GB)</span></label>
+          </div>
+        </fieldset>
+        <fieldset id="elegido" hidden>
+          <legend>Fichero elegido</legend>
+          <p><strong id="nombre"></strong> <span id="tamano"></span></p>
+          <div class="acciones">
+            <div id="campo-clave" hidden>
+              <label for="clave">Contraseña del zip:</label>
+              <input id="clave" type="password" maxlength="256" autocomplete="off" spellcheck="false">
+            </div>
+            <label class="casilla"><input id="sinred" type="checkbox" role="switch"><span>Sin red (no consultar la huella en línea)</span></label>
+            <div class="botones"><button id="analizar" class="principal" type="button">Analizar</button></div>
+          </div>
+          <p class="ayuda">Los zips de MalwareBazaar usan «infected». Vacía, se analiza el zip como un fichero más.</p>
+        </fieldset>
+      </div>
+      <fieldset id="actualizacion" hidden>
+        <legend>Actualización de datos</legend>
+        <p id="actividad-actualiza"></p>
+        <div class="barra" role="progressbar" aria-label="Progreso de la actualización"><div class="relleno" id="relleno-actualiza"></div></div>
+      </fieldset>
+      <fieldset id="avance" hidden>
+        <legend>Análisis en curso</legend>
+        <p id="actividad"></p>
+        <div class="barra" role="progressbar" aria-label="Progreso del análisis"><div class="relleno" id="relleno"></div></div>
+      </fieldset>
+      <section id="informe" aria-label="Informe">
+        <div id="pestanas" role="tablist" hidden></div>
+        <div id="paneles"></div>
+      </section>
+    </div>
+    <div class="estado-barra">
+      <p id="resumen" role="status" aria-live="polite">Listo</p>
+      <p id="pie">Versión: …</p>
+    </div>
+  </div>
+  <div id="aviso" hidden>
+    <div class="cuadro" role="alertdialog" aria-modal="true" aria-labelledby="aviso-titulo" aria-describedby="aviso-texto">
+      <div class="cuadro-titulo" id="aviso-titulo"></div>
+      <div class="cuadro-cuerpo">
+        <span class="cuadro-icono" aria-hidden="true"></span>
+        <p id="aviso-texto"></p>
+      </div>
+      <div class="cuadro-botones"><button id="aviso-aceptar" class="principal" type="button">Aceptar</button></div>
+    </div>
   </div>
 </div>
 <script nonce="__NONCE__">
@@ -300,20 +441,36 @@
     return i ? `${cifra} ${unidades[i]} (${miles(bytes)} bytes)` : `${cifra} bytes`;
   }
 
-  // --- Avisos (rechazado, aviso y error): una banda dentro de la página, sin cuadro modal ni nada que cerrar ---
-  const aviso = $("aviso");
+  // --- Avisos (rechazado, aviso y error): un cuadro de mensaje de XP dentro de la página (no un diálogo del navegador), con su botón «Aceptar».
+  // Mientras está abierto lo de detrás se queda inert (ni ratón ni teclado) como en un cuadro modal; Escape o Aceptar lo cierran, y un mensaje nuevo (elegir otro fichero,
+  // empezar un análisis) lo cierra solo. El texto entra con textContent: es de Python, pero lleva nombres de fichero y detalles de servicios ---
+  const aviso = $("aviso"), avisoTitulo = $("aviso-titulo"), avisoTexto = $("aviso-texto"), avisoAceptar = $("aviso-aceptar");
+  const FONDO_DEL_AVISO = document.querySelectorAll(".cuerpo, .estado-barra");
+  const TITULOS_AVISO = { rechazado: "Argos", aviso: "Argos", error: "Argos — Error" };  // la clase del cuadro es el tipo: ella elige el icono (aviso amarillo, información o error)
+  let focoAnterior = null;
 
   function mostrarAviso(tipo, texto) {
+    if (aviso.hidden) focoAnterior = document.activeElement;  // con uno ya abierto, el foco que hay que devolver sigue siendo el de antes
+    aviso.className = Object.hasOwn(TITULOS_AVISO, tipo) ? tipo : "aviso";
+    avisoTitulo.textContent = TITULOS_AVISO[aviso.className];
+    avisoTexto.textContent = limpiar(texto);
     aviso.hidden = false;
-    aviso.className = tipo === "error" ? "error" : "";
-    aviso.textContent = limpiar(texto);
+    for (const zona of FONDO_DEL_AVISO) zona.inert = true;
+    avisoAceptar.focus();
   }
 
   function ocultarAviso() {
+    if (aviso.hidden) return;
     aviso.hidden = true;
-    aviso.textContent = "";
     aviso.className = "";
+    avisoTexto.textContent = "";
+    for (const zona of FONDO_DEL_AVISO) zona.inert = false;
+    if (focoAnterior && focoAnterior.isConnected && !focoAnterior.disabled) focoAnterior.focus();
+    focoAnterior = null;
   }
+
+  avisoAceptar.addEventListener("click", ocultarAviso);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") ocultarAviso(); });
 
   // --- Lo que dice cada parte del análisis (los mismos textos que la terminal: argos/__main__.py) ---
   const claseEstado = (estado) => (estado === "malware" || estado === "DETECTADO" ? "alarma" : ["sin clave", "límite", "error", "omitido", "no disponible", "no aplica", "no aplicado", "tiempo agotado"].includes(estado) ? "apagado" : "");
@@ -519,9 +676,10 @@
   // --- Un fichero del análisis: su pestaña y su informe, que se rellena según llegan las partes ---
   function nuevoFichero(indice, nombre) {
     const f = { indice, nombre, datos: {}, llegadas: new Set(), bloques: [] };
-    const cajaResumen = el("div", "resumen-fichero");
-    f.bloques.push({ deps: null, repintar: () => cajaResumen.replaceChildren(...seguro(() => resumenDe(f).filter(Boolean))) });
-    const grupos = [el("fieldset", null, el("legend", null, "Resumen"), cajaResumen)];
+    // El aviso amarillo del resumen: su icono (rojo, verde o gris) lo pone el CSS según el titular que haya dentro de .resumen-texto
+    const textoResumen = el("div", "resumen-texto");
+    f.bloques.push({ deps: null, repintar: () => textoResumen.replaceChildren(...seguro(() => resumenDe(f).filter(Boolean))) });
+    const grupos = [el("div", "resumen-fichero", textoResumen)];
     for (const grupo of GRUPOS) {
       const filas = el("div", "filas");
       for (const especificacion of grupo.filas) {
@@ -711,6 +869,8 @@
       case "error":
         enCurso = null;
         ocupado(false);
+        // Un error antes del primer fichero (contraseña mala, zip roto) dejaba el informe en «Preparando el análisis…»; si ya había algo, se conserva
+        if (!ficheros.some(Boolean)) vaciarInforme("No se pudo hacer el análisis: revisa el aviso y vuelve a pulsar «Analizar».");
         estadoBarra.textContent = "Análisis interrumpido";
         mostrarAviso("error", m.texto);
         break;
