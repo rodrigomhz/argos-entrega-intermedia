@@ -9,7 +9,7 @@ Argos analiza ficheros sospechosos íntegramente en tu equipo. **Por defecto, ni
 - **Identificación**: huellas SHA-256 y SHA-1, tipo real del fichero con Magika (avisa si la extensión engaña) y si figura en listas locales de malware conocido (MalwareBazaar) y de software conocido (CIRCL hashlookup). Analiza ficheros dentro de zips cifrados sin extraerlos al disco.
 - **Análisis estático**: cabeceras PE, firma, secciones y entropía, funciones importadas, reglas YARA, detección de empaquetadores, Microsoft Defender en local y el modelo de detección EMBER2024.
 - **Análisis dinámico**: máquina virtual desechable con VMware y `vmrun`; el comportamiento se recoge con CAPEsolo, Noriben o ambos.
-- **Informe**: árbol de procesos, conexiones de red y cambios en ficheros y registro, en una interfaz web local.
+- **Informe**: árbol de procesos, conexiones de red y cambios en ficheros y registro, en una ventana propia (pywebview sobre WebView2, sin servidor HTTP ni puertos).
 - **Veredicto**: combina todas las evidencias con reglas explícitas; cada conclusión se puede seguir hasta la prueba que la produjo.
 
 **Modo conectado:** por defecto, `argos identifica` consulta [CIRCL hashlookup](https://hashlookup.circl.lu/), [MalwareBazaar](https://bazaar.abuse.ch/) (abuse.ch) y [VirusTotal](https://www.virustotal.com/) enviando SOLO la huella SHA-256 del fichero: una huella no publica la muestra, y el fichero y su contenido nunca se suben. Su resultado sale en su propia sección («En línea») y no cambia el veredicto ni nada más del informe; que un servicio conozca un fichero no quiere decir que sea seguro. `--sin-red` lo apaga (y apaga también el aviso de datos nuevos). CIRCL no pide clave; MalwareBazaar y VirusTotal piden una gratuita, que se guarda en una variable de entorno con `setx` y vale en una terminal nueva:
@@ -46,11 +46,12 @@ muestra ──► identificación ──► huellas · tipo (Magika) · listas l
 - **Identificación**: hashlib, Magika, pyzipper
 - **Estático**: pefile, YARA-X, capa, Detect It Easy, Microsoft Defender, EMBER2024 (LightGBM)
 - **Dinámico**: VMware Workstation y `vmrun`; CAPEsolo y Noriben
+- **Interfaz**: pywebview 6.2 sobre WebView2, con HTML, CSS y JavaScript propios: sin servidor, con CSP con nonce y sin nada externo
 - **IA**: solo modelos locales para analizar (Magika, EMBER2024); un modelo de lenguaje opcional, solo para explicar el informe
 
 ## Estado
 
-En desarrollo, por hitos. Hechos: entorno de desarrollo, identificación de ficheros y análisis estático, probado con una muestra real de malware (secciones, entropía, importaciones, firma, suplantación, Defender, reglas YARA, capa, Detect It Easy y EMBER2024, de momento solo con su puntuación: el umbral se calibra en el hito 7). Después: interfaz web, análisis dinámico, evaluación con muestras reales y empaquetado.
+En desarrollo, por hitos. Hechos: entorno de desarrollo, identificación de ficheros, análisis estático (probado con una muestra real de malware: secciones, entropía, importaciones, firma, suplantación, Defender, reglas YARA, capa, Detect It Easy y EMBER2024, de momento solo con su puntuación) e interfaz en ventana propia (informe completo, pestañas por fichero de un zip, progreso, aviso de datos nuevos y botón para actualizarlos), probada a mano con `notepad.exe` y AZORult. Después: análisis dinámico en máquina virtual, evaluación con muestras reales y empaquetado.
 
 ## Uso (lo que funciona hoy)
 
@@ -75,7 +76,10 @@ Baja a `%USERPROFILE%\argos-datos\` las reglas YARA (paquete core de YARA Forge)
 %USERPROFILE%\venvs\argos\Scripts\argos identifica <fichero>
 %USERPROFILE%\venvs\argos\Scripts\argos estatico <fichero>
 %USERPROFILE%\venvs\argos\Scripts\argos estatico muestra.zip --clave infected
+%USERPROFILE%\venvs\argos\Scripts\argos-ventana.exe
 ```
+
+`argos-ventana.exe` abre la ventana: se suelta un fichero (o se elige con el diálogo de Windows), se escribe la contraseña si es un zip y se pulsa «Analizar». El informe se pinta según llega cada parte, con una pestaña por fichero del zip, las señales de alarma contadas y la barra de EMBER2024 (sin umbral hasta el hito 7). «Actualizar» comprueba y baja lo que falte (reglas, listas, herramientas y modelo), con la opción de saltarse CIRCL (1 GB).
 
 Antes de analizar, Argos comprueba (como mucho una vez cada 24 horas) si hay datos nuevos y, si los hay, te lo dice y te ofrece actualizarlos al momento; con `--sin-red` no comprueba nada por red, ni datos nuevos ni las huellas en CIRCL, MalwareBazaar y VirusTotal (ver «Modo conectado»).
 
