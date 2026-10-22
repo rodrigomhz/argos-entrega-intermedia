@@ -5,8 +5,11 @@ import re
 import shutil
 import sys
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
+import zlib
 from collections import namedtuple
 from datetime import datetime
 from email.utils import parsedate_to_datetime
@@ -28,7 +31,9 @@ ZIP_DIE = r"die_win64_portable_[\d.]+_x64\.zip"
 # oficiales y SIEMPRE del tag de la librería instalada, porque unas reglas más nuevas pueden usar funciones que esta librería no entiende. {} = el tag, p. ej. v9.4.0
 URL_REGLAS_CAPA = "https://codeload.github.com/mandiant/capa-rules/zip/refs/tags/{}"
 API_FIRMAS_CAPA = "https://api.github.com/repos/mandiant/capa/contents/sigs?ref={}"
-URL_MALWAREBAZAAR = "https://bazaar.abuse.ch/export/txt/sha256/full/"
+# Desde octubre de 2026 el export viejo (bazaar.abuse.ch/export/txt/...) da 410. El nuevo lleva la Auth-Key de abuse.ch EN LA RUTA ({} = la clave, ya escapada):
+# es el volcado completo en CSV (un zip con full.csv, ~226 MB) y se regenera cada hora
+URL_MALWAREBAZAAR = "https://mb-api.abuse.ch/v2/files/exports/{}/full.csv.zip"
 URL_CIRCL = "https://cra.circl.lu/hashlookup/hashlookup-full.bloom"
 ESPERA = 30  # segundos sin recibir nada antes de rendirse (no es el tiempo total de la descarga)
 # ponytail: ESPERA_AVISO también es por operación, no total (4 peticiones: con un servidor lento podrían sumar más). Mejorar: un plazo total con un hilo
@@ -152,11 +157,12 @@ def pendiente_modelo():
     return Pendiente("modelo EMBER2024", motivo, ember.TAMANO, ember.URL, destino, huella=ember.SHA256)
 
 
-def pendiente_lista(nombre, fichero, url, espera):
+def pendiente_lista(nombre, fichero, url, espera, instalador=None):
     """Pendiente con una lista si falta o el servidor tiene una versión más nueva que el fichero del disco; None si está al día."""
     destino = listas.CARPETA / fichero
     with abrir(url, "HEAD", espera) as r:  # solo las cabeceras: no baja el fichero
-        tamano = int(r.headers["Content-Length"])
+        longitud = r.headers.get("Content-Length")  # el volcado de MalwareBazaar no la anuncia
+        tamano = int(longitud) if longitud else None
         modificado = parsedate_to_datetime(r.headers["Last-Modified"]).timestamp()
     # Solo cuenta la fecha, no el tamaño: el servidor de MalwareBazaar reparte a la vez una copia nueva y otra
     # algo más vieja, de tamaños distintos, y comparar tamaños haría que siempre pareciese desactualizada
@@ -167,15 +173,28 @@ def pendiente_lista(nombre, fichero, url, espera):
         motivo = f"el servidor la cambió el {momento(modificado)} y tu copia es del {momento(destino.stat().st_mtime)}"
     else:
         return None
-    return Pendiente(nombre, motivo, tamano, url, destino)
+    return Pendiente(nombre, motivo, tamano, url, destino, instalador=instalador)
+
+
+def clave_abusech():
+    """La Auth-Key de abuse.ch (la misma del modo conectado) o "" si no está puesta."""
+    return (os.environ.get("ARGOS_ABUSECH_KEY") or "").strip()
 
 
 def comprobar(sin_circl, espera=ESPERA):
     """Lista de Pendiente: lo que falta o está desactualizado. No descarga nada."""
-    pendientes = [
-        pendiente_reglas(espera),
-        pendiente_lista("MalwareBazaar", listas.MALWAREBAZAAR, URL_MALWAREBAZAAR, espera),
-    ]
+    pendientes = [pendiente_reglas(espera)]
+    if clave := clave_abusech():  # sin clave no se pregunta a MalwareBazaar: actualizar() lo dice
+        # quote(safe=""): un carácter raro de la clave no cambia la ruta ni mete caracteres de control (http.client pondría la URL entera, clave incluida, en su error)
+        url = URL_MALWAREBAZAAR.format(urllib.parse.quote(clave, safe=""))
+        # ponytail: el volcado se regenera cada hora, así que una copia de más de una hora ya sale como desactualizada y se vuelven a bajar 226 MB. Mejorar: dar por buena una copia de menos de 24 h
+        try:
+            pendientes.append(pendiente_lista("MalwareBazaar", listas.MALWAREBAZAAR, url, espera, instalar_malwarebazaar))
+        except urllib.error.HTTPError as error:
+            if error.code not in (401, 403):
+                raise
+            # sin url ni clave en el texto, y sin encadenar el error (que lleva la url)
+            raise OSError(f"MalwareBazaar no acepta la clave de ARGOS_ABUSECH_KEY (HTTP {error.code}): revísala en https://auth.abuse.ch/") from None
     if not sin_circl:
         pendientes.append(pendiente_lista("CIRCL", listas.CIRCL, URL_CIRCL, espera))
     # Las herramientas, al final: si una falla (p. ej. Defender bloquea la descarga), lo demás ya está al día
@@ -248,6 +267,42 @@ def instalar_capa(p, progreso=None):
         shutil.rmtree(nueva, ignore_errors=True)  # tras el replace ya no existe; si algo falló, no deja el temporal
 
 
+def instalar_malwarebazaar(p, progreso=None):
+    """Baja el volcado CSV de MalwareBazaar y lo deja en el formato local de siempre (listas.en_malwarebazaar): un zip con full_sha256.txt, una SHA-256 por línea
+    más las líneas # (traen la fecha). Solo al final sustituye a la copia que hubiera; si algo falla, esa copia sigue intacta."""
+    descargado = p.destino.with_name(p.destino.name + ".csv.zip")
+    nuevo = p.destino.with_name(p.destino.name + ".nuevo")
+    try:
+        descargar(p.url, descargado, p.tamano, progreso=progreso)
+        try:
+            with (zipfile.ZipFile(descargado) as origen, origen.open("full.csv") as csv,
+                  zipfile.ZipFile(nuevo, "w", zipfile.ZIP_DEFLATED) as salida, salida.open("full_sha256.txt", "w") as huellas):
+                columnas, filas = False, 0
+                for linea in csv:  # en streaming: el CSV descomprimido ocupa cientos de MB
+                    if linea.startswith(b"#"):
+                        columnas = columnas or linea.startswith(b'# "first_seen_utc","sha256_hash"')
+                        huellas.write(linea)
+                    elif linea.strip():
+                        # Mejor fallar que guardar una lista que nunca encuentra nada: sin la línea de columnas no se sabe cuál es cada columna
+                        if not columnas:
+                            raise OSError("el volcado de MalwareBazaar cambió de formato (una fila antes de la línea de columnas): Argos no sabe leerlo")
+                        # La huella es la 2.ª columna; el split corta antes del nombre de fichero (más a la derecha), que puede traer comillas
+                        partes = linea.split(b'"', 4)
+                        if len(partes) < 4 or len(partes[3]) != 64:
+                            raise OSError("el volcado de MalwareBazaar cambió de formato (una fila sin la SHA-256 donde debía): Argos no sabe leerlo")
+                        huellas.write(partes[3] + b"\n")
+                        filas += 1
+            if not filas:  # una lista vacía sustituiría a una buena
+                raise OSError("el volcado de MalwareBazaar no trae ninguna fila")
+        except (zipfile.BadZipFile, KeyError, EOFError, zlib.error) as error:
+            # Un zip cortado no tiene directorio central (está al final) y uno corrupto falla el CRC al leerlo: es lo que da la integridad, porque la descarga no anuncia su tamaño
+            raise OSError(f"el volcado de MalwareBazaar está cortado, corrupto o sin full.csv: {error}") from error
+        os.replace(nuevo, p.destino)
+    finally:
+        descargado.unlink(missing_ok=True)
+        nuevo.unlink(missing_ok=True)  # tras el replace ya no existe; si algo falló, no deja el temporal
+
+
 def actualizar(sin_circl=False, pendientes=None, evento=None):
     """Descarga lo pendiente; si el aviso ya lo comprobó, se lo pasa en pendientes y no se vuelve a comprobar.
 
@@ -258,6 +313,13 @@ def actualizar(sin_circl=False, pendientes=None, evento=None):
         evento({"estado": "mensaje", "texto": "CIRCL: omitido (sin CIRCL)"})
     elif sin_circl:
         print("CIRCL: omitido (--sin-circl)")
+    if not clave_abusech():  # comprobar() no pregunta a MalwareBazaar sin clave
+        omitida = ("MalwareBazaar: omitido (falta la clave gratuita de abuse.ch: consíguela en https://auth.abuse.ch/ "
+                   "y ponla con setx ARGOS_ABUSECH_KEY tu-clave, en una terminal nueva)")
+        if evento:
+            evento({"estado": "mensaje", "texto": omitida})
+        else:
+            print(omitida)
     if pendientes is None:
         if evento:
             evento({"estado": "comprobando"})
